@@ -455,6 +455,9 @@ class SymbolIndexer:
         else:
             file_symbols = extract_ts_symbols(tree.root_node, source, file_path, language_name)
         
+        # Cache the content for later retrieval (used by get_context_for_symbol)
+        file_symbols._content = content  # type: ignore
+        
         # Update index
         self._add_to_index(file_symbols)
         
@@ -573,17 +576,27 @@ class SymbolIndexer:
         Returns:
             Source code snippet
         """
-        try:
-            with open(symbol.file_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-            
-            start = max(0, symbol.line - 1 - context_lines)
-            end = min(len(lines), symbol.end_line + context_lines)
-            
-            return "".join(lines[start:end])
-        except Exception as e:
-            logger.warning(f"Failed to read context for {symbol.name}: {e}")
-            return ""
+        # First, try to get content from our cached file symbols
+        file_symbols = self.index.by_file.get(symbol.file_path)
+        content = None
+        
+        if file_symbols and hasattr(file_symbols, '_content'):
+            content = file_symbols._content
+        
+        # If not cached, try to read from disk
+        if content is None:
+            try:
+                with open(symbol.file_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            except Exception as e:
+                logger.warning(f"Failed to read context for {symbol.name}: {e}")
+                return ""
+        
+        lines = content.splitlines(keepends=True)
+        start = max(0, symbol.line - 1 - context_lines)
+        end = min(len(lines), symbol.end_line + context_lines)
+        
+        return "".join(lines[start:end])
     
     def get_related_symbols(self, file_path: str) -> list[Symbol]:
         """

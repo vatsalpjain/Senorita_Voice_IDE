@@ -132,6 +132,7 @@ async def gather_context_node(state: OrchestratorState) -> dict:
     """Node 1: Context Agent — always runs first to gather file context"""
     try:
         file_content = state.get("file_content", "")
+        transcript = state.get("transcript", "")
         logger.info(f"gather_context_node: file_path={state['file_path']}, file_content_len={len(file_content)}")
         
         context = await get_context(
@@ -140,8 +141,13 @@ async def gather_context_node(state: OrchestratorState) -> dict:
             cursor_line=state["cursor_line"],
             selection=state["selection"],
             project_root=state.get("project_root"),
+            transcript=transcript,  # Pass transcript for keyword-based symbol search
         )
-        logger.info(f"gather_context_node: context current_file_len={len(context.get('current_file', ''))}")
+        logger.info(
+            f"gather_context_node: context current_file_len={len(context.get('current_file', ''))}, "
+            f"relevant_snippets={len(context.get('relevant_snippets', []))}, "
+            f"referenced_files={len(context.get('referenced_files', []))}"
+        )
         return {"context": context}
     except Exception as e:
         logger.error(f"Context Agent failed: {e}")
@@ -158,6 +164,12 @@ async def gather_context_node(state: OrchestratorState) -> dict:
                 "project_structure": "",
                 "imports": [],
                 "related_files": [],
+                "symbols_in_file": [],
+                "related_symbols": [],
+                "symbol_at_cursor": None,
+                "relevant_snippets": [],
+                "project_summary": "",
+                "referenced_files": [],
             }
         }
 
@@ -235,22 +247,59 @@ async def workflow_node(state: OrchestratorState) -> dict:
 
 
 async def explain_node(state: OrchestratorState) -> dict:
-    """Node: Explain/Review — uses LLM to explain code"""
+    """Node: Explain/Review — uses LLM to explain code with enhanced context"""
     try:
         context = state["context"]
         code_to_explain = context["selected_code"] or context["surrounding_lines"]
         
-        prompt = f"""Explain this {context['language']} code:
-
+        # Build enhanced prompt with relevant snippets
+        prompt_parts = []
+        
+        # Add project summary
+        project_summary = context.get("project_summary", "")
+        if project_summary:
+            prompt_parts.append(f"**Project:** {project_summary}\n")
+        
+        # Add the code to explain
+        prompt_parts.append(f"""**Code to explain** ({context['language']}):
+```{context['language']}
 {code_to_explain}
-
-User asked: {state['transcript']}
-
-Provide a clear, conversational explanation. Keep it concise — this will be spoken aloud."""
+```
+""")
+        
+        # Add symbol at cursor if available
+        symbol_at_cursor = context.get("symbol_at_cursor")
+        if symbol_at_cursor:
+            prompt_parts.append(f"**Current symbol:** {symbol_at_cursor['kind']} `{symbol_at_cursor['name']}` - {symbol_at_cursor.get('signature', '')}\n")
+        
+        # Add relevant snippets from transcript search
+        relevant_snippets = context.get("relevant_snippets", [])
+        if relevant_snippets:
+            prompt_parts.append("**Related code from project:**\n")
+            for snippet in relevant_snippets[:3]:
+                prompt_parts.append(f"From `{snippet['file_path']}` ({snippet['kind']} `{snippet['symbol_name']}`):")
+                prompt_parts.append(f"```\n{snippet['code'][:600]}\n```\n")
+        
+        # Add referenced files (files mentioned by name in transcript)
+        referenced_files = context.get("referenced_files", [])
+        if referenced_files:
+            prompt_parts.append("**Files mentioned in your question:**\n")
+            for ref_file in referenced_files[:2]:  # Limit to 2 for explain
+                prompt_parts.append(f"**{ref_file['filename']}**:")
+                content_preview = ref_file.get('content', '')[:3000]
+                if content_preview:
+                    prompt_parts.append(f"```\n{content_preview}\n```\n")
+        
+        prompt_parts.append(f"**User asked:** {state['transcript']}")
+        prompt_parts.append("\nProvide a clear, conversational explanation. Keep it concise — this will be spoken aloud.")
+        
+        prompt = "\n".join(prompt_parts)
         
         explanation = await ask_llm(
             prompt=prompt,
-            system_prompt="You are a code explainer. Be clear, concise, and conversational.",
+            system_prompt="""You are a code explainer with access to the full project context. 
+When explaining code, reference related functions/classes from the project if relevant.
+Be clear, concise, and conversational. Aim for 3-5 sentences.""",
             temperature=0.3,
             max_tokens=1024,
         )
@@ -269,29 +318,68 @@ Provide a clear, conversational explanation. Keep it concise — this will be sp
 
 
 async def chat_node(state: OrchestratorState) -> dict:
-    """Node: Chat — general conversation fallback"""
+    """Node: Chat — general conversation fallback with enhanced context"""
     try:
         context = state.get("context")
         file_content = context.get("current_file", "") if context else ""
         
-        # Build prompt with file context if available
+        # Build enhanced prompt with file context AND relevant snippets
+        prompt_parts = []
+        
+        # Add project summary if available
+        project_summary = context.get("project_summary", "") if context else ""
+        if project_summary:
+            prompt_parts.append(f"**Project Overview:** {project_summary}\n")
+        
+        # Add current file context
         if file_content:
-            prompt = f"""The user is viewing this file ({context.get('file_path', 'unknown')}):
-
+            prompt_parts.append(f"""**Current File** ({context.get('file_path', 'unknown')}):
 ```{context.get('language', 'plaintext')}
-{file_content[:4000]}
+{file_content[:3000]}
 ```
-
-User question: {state["transcript"]}"""
-        else:
-            prompt = state["transcript"]
+""")
+        
+        # Add symbols in current file
+        symbols_in_file = context.get("symbols_in_file", []) if context else []
+        if symbols_in_file:
+            symbol_list = ", ".join([f"{s['kind']} `{s['name']}`" for s in symbols_in_file[:15]])
+            prompt_parts.append(f"**Symbols in this file:** {symbol_list}\n")
+        
+        # Add relevant code snippets from transcript search (THIS IS THE KEY ENHANCEMENT)
+        relevant_snippets = context.get("relevant_snippets", []) if context else []
+        if relevant_snippets:
+            prompt_parts.append("**Relevant code from project (matching your query):**\n")
+            for snippet in relevant_snippets[:5]:
+                prompt_parts.append(f"From `{snippet['file_path']}` ({snippet['kind']} `{snippet['symbol_name']}` at line {snippet['line']}):")
+                prompt_parts.append(f"```\n{snippet['code'][:800]}\n```\n")
+        
+        # Add referenced files (files mentioned by name in transcript)
+        referenced_files = context.get("referenced_files", []) if context else []
+        if referenced_files:
+            prompt_parts.append("**Files mentioned in your question:**\n")
+            for ref_file in referenced_files[:3]:  # Limit to 3 files
+                prompt_parts.append(f"**{ref_file['filename']}** (`{ref_file['path']}`):")
+                content_preview = ref_file.get('content', '')[:4000]
+                if content_preview:
+                    prompt_parts.append(f"```\n{content_preview}\n```\n")
+        
+        # Add the user's question
+        prompt_parts.append(f"**User question:** {state['transcript']}")
+        
+        prompt = "\n".join(prompt_parts)
         
         response = await ask_llm(
             prompt=prompt,
-            system_prompt="You are Senorita, a helpful AI coding assistant. You have access to the user's current file. Respond conversationally. Keep it brief — this will be spoken aloud.",
+            system_prompt="""You are Senorita, a helpful AI coding assistant. You have access to:
+1. The user's current file
+2. Symbols (functions, classes) in the file
+3. Relevant code snippets from across the project that match the user's query
+
+Use this context to answer questions about the codebase accurately. When referencing code, mention the file and function names.
+Keep responses concise — this will be spoken aloud. Aim for 2-4 sentences unless more detail is needed.""",
             action="CHAT",
             temperature=0.5,
-            max_tokens=512,
+            max_tokens=800,
         )
         
         return {

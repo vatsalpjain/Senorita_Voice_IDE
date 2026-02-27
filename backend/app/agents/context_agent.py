@@ -19,6 +19,7 @@ from app.services.symbol_indexer import (
     Symbol,
     SymbolIndexer,
 )
+from app.services.file_registry import get_file_registry
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,22 @@ class SymbolInfo(TypedDict):
     docstring: str
 
 
+class RelevantCodeSnippet(TypedDict):
+    """A code snippet from a relevant symbol"""
+    symbol_name: str
+    kind: str
+    file_path: str
+    line: int
+    code: str                   # Actual source code
+
+
+class ReferencedFile(TypedDict):
+    """A file mentioned in the transcript"""
+    filename: str
+    path: str
+    content: str
+
+
 class FileContext(TypedDict):
     """Structured context returned by the Context Agent"""
     current_file: str           # Full file content
@@ -44,10 +61,15 @@ class FileContext(TypedDict):
     project_structure: str      # File tree of the project
     imports: list[str]          # Extracted import statements
     related_files: list[str]    # Files imported by this one
-    # New: AST-based symbol information
+    # AST-based symbol information
     symbols_in_file: list[SymbolInfo]      # All symbols in current file
     related_symbols: list[SymbolInfo]      # Symbols from related/imported files
     symbol_at_cursor: SymbolInfo | None    # Symbol at cursor position (if any)
+    # Enhanced: transcript-based search results
+    relevant_snippets: list[RelevantCodeSnippet]  # Code snippets matching transcript keywords
+    project_summary: str                          # Summary of indexed project
+    # File name detection: files mentioned in transcript
+    referenced_files: list[ReferencedFile]        # Files detected from transcript mentions
 
 
 # Language detection based on file extension
@@ -273,8 +295,15 @@ def get_symbol_at_cursor(indexer: SymbolIndexer, file_path: str, cursor_line: in
 
 
 def extract_keywords_from_transcript(transcript: str) -> list[str]:
-    """Extract potential symbol names from a voice transcript"""
-    # Remove common filler words
+    """
+    Extract potential symbol names and code-related terms from a voice transcript.
+    
+    Strategy:
+    1. Keep technical terms (even if they look like stop words in code context)
+    2. Look for compound words that might be symbol names
+    3. Generate variations (camelCase, snake_case)
+    """
+    # Only remove truly generic filler words, keep technical terms
     stop_words = {
         "the", "a", "an", "to", "for", "in", "on", "at", "and", "or", "is", "are",
         "was", "were", "be", "been", "being", "have", "has", "had", "do", "does",
@@ -284,22 +313,227 @@ def extract_keywords_from_transcript(transcript: str) -> list[str]:
         "how", "when", "where", "why", "all", "each", "every", "both", "few", "more",
         "most", "other", "some", "such", "no", "not", "only", "same", "so", "than",
         "too", "very", "just", "also", "now", "here", "there", "then", "once",
-        "create", "add", "make", "write", "implement", "fix", "debug", "refactor",
-        "explain", "show", "find", "get", "set", "update", "delete", "remove",
-        "function", "class", "method", "variable", "file", "code", "line", "lines",
+        "please", "tell", "about", "detail", "details", "want", "need", "like",
     }
     
-    # Split and filter
-    words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', transcript.lower())
-    keywords = [w for w in words if w not in stop_words and len(w) > 2]
+    keywords: list[str] = []
     
-    # Also look for camelCase or snake_case patterns in original
-    patterns = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', transcript)
-    for p in patterns:
-        if '_' in p or (p != p.lower() and p != p.upper()):
-            keywords.append(p.lower())
+    # Extract all words
+    words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', transcript)
     
-    return list(set(keywords))
+    for word in words:
+        word_lower = word.lower()
+        if word_lower in stop_words or len(word_lower) < 2:
+            continue
+        
+        # Keep the word
+        keywords.append(word_lower)
+        
+        # If it's a technical term, also add variations
+        # e.g., "voice" -> also search "voicepanel", "voicePanel"
+        # e.g., "panel" -> also search "voicepanel", "VoicePanel"
+    
+    # Look for camelCase or snake_case patterns in original
+    for word in words:
+        if '_' in word or (word != word.lower() and word != word.upper()):
+            keywords.append(word.lower())
+            keywords.append(word)  # Keep original case too
+    
+    # Generate compound terms from adjacent words
+    # e.g., "voice panel" -> "voicepanel", "voice_panel", "VoicePanel"
+    words_clean = [w.lower() for w in words if w.lower() not in stop_words and len(w) > 1]
+    for i in range(len(words_clean) - 1):
+        compound = words_clean[i] + words_clean[i + 1]
+        keywords.append(compound)
+        keywords.append(f"{words_clean[i]}_{words_clean[i + 1]}")
+    
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for kw in keywords:
+        kw_lower = kw.lower()
+        if kw_lower not in seen:
+            seen.add(kw_lower)
+            result.append(kw_lower)
+    
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File Name Detection from Transcript
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cache for project file list (refreshed when project_root changes)
+_file_cache: dict[str, list[tuple[str, str]]] = {}  # project_root -> [(filename, full_path), ...]
+
+
+def _normalize_for_matching(text: str) -> str:
+    """Normalize text for fuzzy file name matching"""
+    # Remove common voice artifacts: "dot" -> ".", spaces, lowercase
+    text = text.lower()
+    text = re.sub(r'\s+dot\s+', '.', text)
+    text = re.sub(r'\s+', '', text)  # Remove all spaces
+    return text
+
+
+def _get_project_files(project_root: str) -> list[tuple[str, str]]:
+    """
+    Get all files in the project (cached).
+    Returns list of (filename_lower, full_path) tuples.
+    """
+    if project_root in _file_cache:
+        return _file_cache[project_root]
+    
+    files: list[tuple[str, str]] = []
+    skip_dirs = {
+        "node_modules", "__pycache__", ".git", ".venv", "venv",
+        "dist", "build", ".next", ".cache", "coverage", ".idea"
+    }
+    
+    try:
+        for root, dirs, filenames in os.walk(project_root):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            for filename in filenames:
+                full_path = os.path.join(root, filename)
+                files.append((filename.lower(), full_path))
+    except Exception as e:
+        logger.warning(f"Error scanning project files: {e}")
+    
+    _file_cache[project_root] = files
+    logger.info(f"Context Agent: cached {len(files)} files from project")
+    return files
+
+
+def detect_files_in_transcript(transcript: str, project_root: str | None = None) -> list[dict]:
+    """
+    Detect file names mentioned in the transcript and return their info.
+    
+    Uses the file registry (populated by frontend) instead of filesystem access.
+    
+    Handles voice input like:
+    - "Monaco editor dot TSX" -> MonacoEditor.tsx
+    - "voice panel" -> VoicePanel.tsx
+    - "orchestrator dot py" -> orchestrator.py
+    - "all the agents" -> all files in agents/ folder
+    
+    Returns list of {filename, path, content} for matched files.
+    """
+    registry = get_file_registry()
+    registered_files = registry.get_all()
+    
+    if not registered_files:
+        logger.debug("Context Agent: no files in registry, skipping file detection")
+        return []
+    
+    # Keyword to folder/category mapping
+    # When user says "agents", find all files in paths containing "agents"
+    CATEGORY_KEYWORDS = {
+        "agents": ["agents", "agent"],
+        "components": ["components", "component"],
+        "services": ["services", "service"],
+        "hooks": ["hooks", "hook"],
+        "api": ["api"],
+        "models": ["models", "model"],
+        "utils": ["utils", "util", "helpers", "helper"],
+        "types": ["types", "type"],
+        "tests": ["tests", "test"],
+    }
+    
+    transcript_lower = transcript.lower()
+    matched_files: list[dict] = []
+    seen_paths: set[str] = set()
+    
+    # Check for category keywords first (e.g., "all the agents")
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in transcript_lower:
+                logger.info(f"Context Agent: detected category keyword '{keyword}' -> searching for '{category}' files")
+                for reg_file in registered_files:
+                    if reg_file.path in seen_paths:
+                        continue
+                    # Check if path contains the category
+                    if f"/{category}/" in reg_file.path.lower() or f"\\{category}\\" in reg_file.path.lower() or reg_file.path.lower().startswith(f"{category}/") or reg_file.path.lower().startswith(f"{category}\\"):
+                        seen_paths.add(reg_file.path)
+                        matched_files.append({
+                            "filename": reg_file.filename,
+                            "path": reg_file.path,
+                            "content": reg_file.content[:8000] if len(reg_file.content) > 8000 else reg_file.content,
+                        })
+                break  # Only match first keyword per category
+    
+    # If we found category matches, return those (limit to 10)
+    if matched_files:
+        logger.info(f"Context Agent: found {len(matched_files)} files from category search")
+        return matched_files[:10]
+    
+    # Extract potential file name patterns from transcript
+    file_patterns: list[str] = []
+    
+    # Match patterns like "monaco editor dot tsx", "voice panel tsx"
+    pattern_matches = re.findall(
+        r'([a-z]+(?:\s+[a-z]+)*)\s*(?:dot|\.)\s*(tsx?|jsx?|py|ts|js|css|html|json|md)',
+        transcript_lower
+    )
+    for name_part, ext in pattern_matches:
+        # Generate variations
+        name_clean = name_part.replace(' ', '')
+        file_patterns.append(f"{name_clean}.{ext}")
+        # Also try with underscores
+        name_snake = name_part.replace(' ', '_')
+        file_patterns.append(f"{name_snake}.{ext}")
+    
+    # Also look for direct file name mentions (already formatted)
+    direct_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*\.[a-z]{2,4})\b', transcript)
+    file_patterns.extend([m.lower() for m in direct_matches])
+    
+    # Also extract individual words that might be file names (without extension)
+    words = re.findall(r'\b([a-zA-Z][a-zA-Z0-9]*)\b', transcript)
+    for word in words:
+        if len(word) > 3:  # Skip short words
+            file_patterns.append(word.lower())
+    
+    if not file_patterns:
+        return []
+    
+    logger.info(f"Context Agent: looking for files matching: {file_patterns[:10]}")
+    
+    matched_files: list[dict] = []
+    seen_paths: set[str] = set()
+    
+    for pattern in file_patterns:
+        pattern_normalized = _normalize_for_matching(pattern)
+        
+        for reg_file in registered_files:
+            if reg_file.path in seen_paths:
+                continue
+            
+            filename_lower = reg_file.filename.lower()
+            filename_normalized = _normalize_for_matching(filename_lower)
+            
+            # Exact match
+            if filename_lower == pattern_normalized or filename_normalized == pattern_normalized:
+                seen_paths.add(reg_file.path)
+                matched_files.append({
+                    "filename": reg_file.filename,
+                    "path": reg_file.path,
+                    "content": reg_file.content[:8000] if len(reg_file.content) > 8000 else reg_file.content,
+                })
+                continue
+            
+            # Fuzzy match: pattern is substring of filename or vice versa
+            if pattern_normalized in filename_normalized or filename_normalized in pattern_normalized:
+                seen_paths.add(reg_file.path)
+                matched_files.append({
+                    "filename": reg_file.filename,
+                    "path": reg_file.path,
+                    "content": reg_file.content[:8000] if len(reg_file.content) > 8000 else reg_file.content,
+                })
+    
+    # Limit to top 5 files to avoid context bloat
+    matched_files = matched_files[:5]
+    
+    logger.info(f"Context Agent: found {len(matched_files)} files from registry matching transcript")
+    return matched_files
 
 
 async def get_context(
@@ -308,6 +542,7 @@ async def get_context(
     cursor_line: int = 1,
     selection: str = "",
     project_root: str | None = None,
+    transcript: str = "",
 ) -> FileContext:
     """
     Main entry point for Context Agent.
@@ -319,6 +554,7 @@ async def get_context(
         cursor_line: 1-indexed line number where cursor is positioned
         selection: User-selected code snippet (if any)
         project_root: Root directory of the project (for file tree)
+        transcript: User's voice command (used to search for relevant symbols)
     
     Returns:
         FileContext dict with all gathered information
@@ -355,6 +591,9 @@ async def get_context(
     symbols_in_file: list[SymbolInfo] = []
     related_symbols: list[SymbolInfo] = []
     symbol_at_cursor: SymbolInfo | None = None
+    relevant_snippets: list[RelevantCodeSnippet] = []
+    project_summary: str = ""
+    file_symbols = None  # Track for later use in transcript search
     
     try:
         indexer = get_indexer()
@@ -370,6 +609,7 @@ async def get_context(
             file_symbols = indexer.index_file(file_path, content)
             if file_symbols:
                 symbols_in_file = [symbol_to_info(s) for s in file_symbols.symbols]
+                logger.info(f"Context Agent: indexed {len(file_symbols.symbols)} symbols from current file")
         
         # Get symbol at cursor position
         symbol_at_cursor = get_symbol_at_cursor(indexer, file_path, cursor_line)
@@ -378,12 +618,131 @@ async def get_context(
         related_syms = indexer.get_related_symbols(file_path)
         related_symbols = [symbol_to_info(s) for s in related_syms[:30]]  # Limit
         
+        # ─────────────────────────────────────────────────────────────────────
+        # ENHANCED: Search for symbols matching transcript keywords
+        # Works even without project-wide indexing by searching current file
+        # ─────────────────────────────────────────────────────────────────────
+        if transcript:
+            keywords = extract_keywords_from_transcript(transcript)
+            logger.info(f"Context Agent: transcript='{transcript[:80]}...'")
+            logger.info(f"Context Agent: extracted keywords: {keywords[:15]}")
+            logger.info(f"Context Agent: file_symbols available: {file_symbols is not None}, symbols count: {len(file_symbols.symbols) if file_symbols else 0}")
+            
+            seen_symbols: set[str] = set()
+            matched_symbols: list[Symbol] = []
+            
+            # First, search the global index (if project was indexed)
+            for keyword in keywords[:10]:
+                results = indexer.search_symbols(keyword, limit=5)
+                for sym in results:
+                    sym_id = f"{sym.file_path}:{sym.line}:{sym.name}"
+                    if sym_id not in seen_symbols:
+                        seen_symbols.add(sym_id)
+                        matched_symbols.append(sym)
+            
+            # Also search current file's symbols directly (works without project index)
+            if file_symbols:
+                for sym in file_symbols.symbols:
+                    sym_id = f"{sym.file_path}:{sym.line}:{sym.name}"
+                    if sym_id in seen_symbols:
+                        continue
+                    
+                    # Check if symbol name matches any keyword (flexible matching)
+                    sym_lower = sym.name.lower()
+                    sym_parts = sym_lower.replace("_", " ").split()  # Split snake_case
+                    
+                    matched = False
+                    for kw in keywords:
+                        # Direct match
+                        if kw in sym_lower or sym_lower in kw:
+                            matched = True
+                            break
+                        # Part match (e.g., "voice" matches "VoicePanel")
+                        for part in sym_parts:
+                            if kw in part or part in kw:
+                                matched = True
+                                break
+                        if matched:
+                            break
+                    
+                    if matched:
+                        seen_symbols.add(sym_id)
+                        matched_symbols.append(sym)
+            
+            # If no matches found, include top functions/classes from current file as fallback
+            if not matched_symbols and file_symbols:
+                logger.info("Context Agent: no keyword matches, using top symbols from file")
+                for sym in file_symbols.symbols:
+                    if sym.kind in ("function", "class", "method"):
+                        matched_symbols.append(sym)
+                        if len(matched_symbols) >= 5:
+                            break
+            
+            logger.info(f"Context Agent: matched {len(matched_symbols)} symbols from keywords")
+            
+            # Get code snippets for matched symbols (prioritize functions/classes)
+            matched_symbols.sort(key=lambda s: (
+                0 if s.kind in ("function", "class", "method") else 1,
+                -len(s.name)  # Longer names often more specific
+            ))
+            
+            for sym in matched_symbols[:8]:  # Limit to top 8 relevant snippets
+                code = indexer.get_context_for_symbol(sym, context_lines=5)
+                logger.debug(f"Context Agent: get_context_for_symbol({sym.name}) returned {len(code) if code else 0} chars")
+                if code:
+                    relevant_snippets.append({
+                        "symbol_name": sym.name,
+                        "kind": sym.kind,
+                        "file_path": sym.file_path,
+                        "line": sym.line,
+                        "code": code[:1500],  # Limit code length
+                    })
+                else:
+                    # Fallback: use symbol signature/docstring if no code context available
+                    fallback_code = f"{sym.kind} {sym.name}"
+                    if sym.signature:
+                        fallback_code = sym.signature
+                    if sym.docstring:
+                        fallback_code += f"\n    \"\"\"{sym.docstring}\"\"\""
+                    relevant_snippets.append({
+                        "symbol_name": sym.name,
+                        "kind": sym.kind,
+                        "file_path": sym.file_path,
+                        "line": sym.line,
+                        "code": fallback_code,
+                    })
+            
+            logger.info(f"Context Agent: found {len(relevant_snippets)} relevant snippets for transcript")
+        
+        # Generate project summary
+        summary = indexer.get_project_summary()
+        if summary.get("total_files", 0) > 0:
+            project_summary = (
+                f"Project: {summary.get('total_files', 0)} files indexed, "
+                f"{summary.get('total_symbols', 0)} symbols "
+                f"({summary.get('by_kind', {})})"
+            )
+        
         logger.info(
             f"Context Agent: found {len(symbols_in_file)} symbols in file, "
-            f"{len(related_symbols)} related symbols"
+            f"{len(related_symbols)} related, {len(relevant_snippets)} from transcript"
         )
     except Exception as e:
         logger.warning(f"Symbol indexing failed (non-fatal): {e}")
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # File name detection: find files mentioned in transcript
+    # ─────────────────────────────────────────────────────────────────────────
+    referenced_files: list[ReferencedFile] = []
+    if transcript:
+        # Use file registry (no project_root needed - frontend registers files)
+        detected = detect_files_in_transcript(transcript)
+        for f in detected:
+            referenced_files.append({
+                "filename": f["filename"],
+                "path": f["path"],
+                "content": f.get("content", ""),
+            })
     
     context: FileContext = {
         "current_file": content,
@@ -398,9 +757,12 @@ async def get_context(
         "symbols_in_file": symbols_in_file,
         "related_symbols": related_symbols,
         "symbol_at_cursor": symbol_at_cursor,
+        "relevant_snippets": relevant_snippets,
+        "project_summary": project_summary,
+        "referenced_files": referenced_files,
     }
     
-    logger.info(f"Context Agent: gathered context for {file_path} ({language})")
+    logger.info(f"Context Agent: gathered context for {file_path} ({language}), referenced_files={len(referenced_files)}")
     return context
 
 

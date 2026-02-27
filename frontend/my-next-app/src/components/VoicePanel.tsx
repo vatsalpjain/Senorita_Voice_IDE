@@ -487,14 +487,14 @@ export function VoicePanel({
       // ── PRIMARY: WebSocket streaming ──
       // Use agentic_command when we have file context for full orchestrator workflow
       if (editorContext.filename && editorContext.filename !== "untitled") {
-        console.log("[VoicePanel] Sending agentic_command with file_content length:", editorContext.currentCode?.length || 0);
+        console.log("[VoicePanel] Sending agentic_command with file_content length:", editorContext.currentCode?.length || 0, "project_root:", editorContext.projectRoot);
         const agenticCmd = buildAgenticCommand({
           text: trimmed,
           file_path: editorContext.filename,
           file_content: editorContext.currentCode || "",
           cursor_line: editorContext.cursorLine || 1,
           selection: editorContext.selection || "",
-          project_root: "",
+          project_root: editorContext.projectRoot || "",
           skip_tts: true,
         });
         ws.send(agenticCmd);

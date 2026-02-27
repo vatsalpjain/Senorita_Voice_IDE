@@ -14,6 +14,7 @@ import {
   readDirectory,
   readFileContent,
 } from "../../services/fileSystemService";
+import { registerFile, unregisterFile, registerFilesBatch, clearFileRegistry } from "../../services/fileRegistryService";
 
 // Dynamic import Monaco to avoid SSR issues
 const MonacoEditor = dynamic(() => import("../../components/MonacoEditor"), {
@@ -1463,6 +1464,7 @@ export default function EditorPage(): React.ReactElement {
     currentCode: activeTab?.content ?? "",
     cursorLine: cursorPos.line,
     selection: selection,
+    projectRoot: folderName || undefined,  // Pass project folder name for symbol indexing
   };
 
   // Open file - reads content from handle if available
@@ -1503,6 +1505,9 @@ export default function EditorPage(): React.ReactElement {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(node.id);
     setShowMarkdown(false);
+    
+    // Register file with backend for context sharing
+    registerFile(node.name, node.id, content, newTab.language);
   }, [tabs]);
 
   // Boot complete handler
@@ -1526,6 +1531,58 @@ export default function EditorPage(): React.ReactElement {
       // Read the directory tree
       const tree = await readDirectory(handle);
       setFileTree(tree as unknown as FileNode[]);
+      
+      // Register all files with backend for context sharing
+      // Clear previous registry first
+      await clearFileRegistry();
+      
+      // Collect all files from tree and read their content
+      const collectAndReadFiles = async (nodes: FileNode[], parentPath: string = ""): Promise<Array<{ filename: string; path: string; content: string; language: string }>> => {
+        const files: Array<{ filename: string; path: string; content: string; language: string }> = [];
+        
+        for (const node of nodes) {
+          const nodePath = parentPath ? `${parentPath}/${node.name}` : node.name;
+          
+          if (node.type === "file") {
+            // Read file content
+            let content = node.content || "";
+            if (node.handle && !node.content) {
+              try {
+                content = await readFileContent(node.handle);
+              } catch (err) {
+                console.warn(`[handleOpenFolder] Failed to read ${node.name}:`, err);
+                content = "";
+              }
+            }
+            
+            // Only register if we have content and it's not too large (< 100KB)
+            if (content && content.length < 100000) {
+              files.push({
+                filename: node.name,
+                path: nodePath,
+                content,
+                language: node.language || getLanguage(node.name),
+              });
+            }
+          } else if (node.children) {
+            // Recurse into folders
+            const childFiles = await collectAndReadFiles(node.children, nodePath);
+            files.push(...childFiles);
+          }
+        }
+        
+        return files;
+      };
+      
+      // Collect and register files in background
+      collectAndReadFiles(tree as unknown as FileNode[]).then(async (files) => {
+        if (files.length > 0) {
+          console.log(`[handleOpenFolder] Registering ${files.length} files with backend...`);
+          await registerFilesBatch(files);
+          console.log(`[handleOpenFolder] Registered ${files.length} files`);
+        }
+      });
+      
     } catch (err) {
       console.error("Error opening folder:", err);
     } finally {
@@ -1534,6 +1591,9 @@ export default function EditorPage(): React.ReactElement {
   }, []);
 
   const handleTabClose = (id: string): void => {
+    // Unregister file from backend when tab is closed
+    unregisterFile(id);
+    
     setTabs((prev) => {
       const idx = prev.findIndex((t) => t.id === id);
       const next = prev.filter((t) => t.id !== id);

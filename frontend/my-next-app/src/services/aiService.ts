@@ -71,6 +71,7 @@ export interface EditorContext {
   currentCode: string;
   cursorLine?: number;
   selection?: string;
+  projectRoot?: string;  // Root directory of the project for symbol indexing
 }
 
 export interface AICommandResponse {

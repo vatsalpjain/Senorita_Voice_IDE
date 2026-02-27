@@ -1,8 +1,9 @@
 import logging
 import json
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 import io
 
 from app.models.request import TextCommandRequest, TTSRequest, SummarizeRequest
@@ -13,6 +14,7 @@ from app.services.deepgram_stt import transcribe_audio
 from app.services.deepgram_tts import text_to_speech
 from app.services.code_actions import handle_action
 from app.services.n8n_service import trigger_n8n
+from app.services.file_registry import get_file_registry
 from app.models.command import CommandResult, ActionType
 from app.config import settings
 
@@ -183,3 +185,113 @@ async def check_status():
           "slack": bool(settings.N8N_SLACK_WEBHOOK_URL)
       }
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File Registry API — Frontend registers files for context sharing
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RegisterFileRequest(BaseModel):
+    """Request to register a file"""
+    filename: str
+    path: str
+    content: str
+    language: Optional[str] = ""
+
+
+class UnregisterFileRequest(BaseModel):
+    """Request to unregister a file"""
+    path: str
+
+
+@router.post("/files/register")
+async def register_file(request: RegisterFileRequest):
+    """
+    Register a file in the backend cache.
+    Call this when a tab is opened or file content changes.
+    """
+    registry = get_file_registry()
+    reg_file = registry.register(
+        filename=request.filename,
+        path=request.path,
+        content=request.content,
+        language=request.language or "",
+    )
+    return {
+        "ok": True,
+        "filename": reg_file.filename,
+        "path": reg_file.path,
+        "size": len(reg_file.content),
+    }
+
+
+@router.post("/files/unregister")
+async def unregister_file(request: UnregisterFileRequest):
+    """
+    Unregister a file from the backend cache.
+    Call this when a tab is closed.
+    """
+    registry = get_file_registry()
+    removed = registry.unregister(request.path)
+    return {"ok": removed, "path": request.path}
+
+
+@router.get("/files/list")
+async def list_registered_files():
+    """Get list of all registered files"""
+    registry = get_file_registry()
+    files = registry.get_all()
+    return {
+        "ok": True,
+        "files": [
+            {
+                "filename": f.filename,
+                "path": f.path,
+                "language": f.language,
+                "size": len(f.content),
+            }
+            for f in files
+        ],
+    }
+
+
+@router.get("/files/stats")
+async def file_registry_stats():
+    """Get file registry statistics"""
+    registry = get_file_registry()
+    return {"ok": True, **registry.stats()}
+
+
+@router.post("/files/clear")
+async def clear_file_registry():
+    """Clear all registered files"""
+    registry = get_file_registry()
+    registry.clear()
+    return {"ok": True}
+
+
+class RegisterFilesBatchRequest(BaseModel):
+    """Request to register multiple files"""
+    files: List[RegisterFileRequest]
+
+
+@router.post("/files/register-batch")
+async def register_files_batch(request: RegisterFilesBatchRequest):
+    """
+    Register multiple files in batch.
+    Call this when a folder is opened to register all files.
+    """
+    registry = get_file_registry()
+    count = 0
+    
+    for file_req in request.files:
+        registry.register(
+            filename=file_req.filename,
+            path=file_req.path,
+            content=file_req.content,
+            language=file_req.language or "",
+        )
+        count += 1
+    
+    logger.info(f"[FileRegistry] Batch registered {count} files")
+    return {"ok": True, "count": count}

@@ -72,6 +72,36 @@ async def test_context_agent():
     print()
 
 
+async def test_enhanced_context():
+    print("=" * 60)
+    print("Testing ENHANCED Context with Transcript Search")
+    print("=" * 60)
+    
+    # Simulate a voice command asking about agents
+    transcript = "What are the agents in this project and what does the orchestrator do?"
+    
+    ctx = await get_context(
+        file_path=TEST_FILE,
+        cursor_line=1,
+        project_root=PROJECT_ROOT,
+        transcript=transcript,  # NEW: pass transcript for keyword search
+    )
+    
+    print(f"Transcript: '{transcript}'")
+    print(f"Project summary: {ctx.get('project_summary', 'N/A')}")
+    print()
+    
+    # Show relevant snippets found from transcript
+    relevant_snippets = ctx.get('relevant_snippets', [])
+    print(f"Found {len(relevant_snippets)} relevant code snippets:")
+    for snippet in relevant_snippets:
+        print(f"  - {snippet['kind']} `{snippet['symbol_name']}` @ {snippet['file_path']}:{snippet['line']}")
+        # Show first 100 chars of code
+        code_preview = snippet['code'][:100].replace('\n', ' ')
+        print(f"    Preview: {code_preview}...")
+    print()
+
+
 async def test_symbol_search():
     print("=" * 60)
     print("Testing Symbol Search from Transcript")
@@ -100,6 +130,7 @@ async def test_symbol_search():
 async def main():
     await test_symbol_indexer()
     await test_context_agent()
+    await test_enhanced_context()  # NEW: test transcript-based search
     await test_symbol_search()
     print("\n✓ All tests passed!")
 

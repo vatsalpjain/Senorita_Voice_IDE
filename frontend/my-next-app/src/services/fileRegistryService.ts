@@ -38,7 +38,7 @@ export async function registerFile(
     });
     
     if (!response.ok) {
-      console.error("[FileRegistry] Failed to register file:", response.statusText);
+      console.warn("[FileRegistry] Failed to register file:", response.statusText);
       return { ok: false, filename, path, size: 0 };
     }
     
@@ -46,7 +46,7 @@ export async function registerFile(
     console.log(`[FileRegistry] Registered: ${filename} (${data.size} bytes)`);
     return data;
   } catch (error) {
-    console.error("[FileRegistry] Error registering file:", error);
+    console.warn("[FileRegistry] Error registering file:", error);
     return { ok: false, filename, path, size: 0 };
   }
 }
@@ -64,7 +64,7 @@ export async function unregisterFile(path: string): Promise<{ ok: boolean }> {
     });
     
     if (!response.ok) {
-      console.error("[FileRegistry] Failed to unregister file:", response.statusText);
+      console.warn("[FileRegistry] Failed to unregister file:", response.statusText);
       return { ok: false };
     }
     
@@ -72,7 +72,7 @@ export async function unregisterFile(path: string): Promise<{ ok: boolean }> {
     console.log(`[FileRegistry] Unregistered: ${path}`);
     return data;
   } catch (error) {
-    console.error("[FileRegistry] Error unregistering file:", error);
+    console.warn("[FileRegistry] Error unregistering file:", error);
     return { ok: false };
   }
 }
@@ -85,14 +85,14 @@ export async function listRegisteredFiles(): Promise<RegisteredFile[]> {
     const response = await fetch(`${API_BASE}/api/files/list`);
     
     if (!response.ok) {
-      console.error("[FileRegistry] Failed to list files:", response.statusText);
+      console.warn("[FileRegistry] Failed to list files:", response.statusText);
       return [];
     }
     
     const data = await response.json();
     return data.files || [];
   } catch (error) {
-    console.error("[FileRegistry] Error listing files:", error);
+    console.warn("[FileRegistry] Error listing files:", error);
     return [];
   }
 }
@@ -115,7 +115,7 @@ export async function getFileRegistryStats(): Promise<FileRegistryStats | null> 
       filenames: data.filenames,
     };
   } catch (error) {
-    console.error("[FileRegistry] Error getting stats:", error);
+    console.warn("[FileRegistry] Error getting stats:", error);
     return null;
   }
 }
@@ -136,7 +136,7 @@ export async function clearFileRegistry(): Promise<{ ok: boolean }> {
     console.log("[FileRegistry] Cleared all files");
     return { ok: true };
   } catch (error) {
-    console.error("[FileRegistry] Error clearing registry:", error);
+    console.warn("[FileRegistry] Error clearing registry:", error);
     return { ok: false };
   }
 }
@@ -155,7 +155,7 @@ export async function searchFiles(query: string): Promise<Array<{ filename: stri
     const data = await response.json();
     return data.files || [];
   } catch (error) {
-    console.error("[FileRegistry] Error searching files:", error);
+    console.warn("[FileRegistry] Error searching files:", error);
     return [];
   }
 }
@@ -174,7 +174,7 @@ export async function listAllFiles(): Promise<Array<{ filename: string; path: st
     const data = await response.json();
     return data.files || [];
   } catch (error) {
-    console.error("[FileRegistry] Error listing files:", error);
+    console.warn("[FileRegistry] Error listing files:", error);
     return [];
   }
 }
@@ -193,7 +193,7 @@ export async function getFileFromRegistry(path: string): Promise<{ filename: str
     const data = await response.json();
     return data.file || null;
   } catch (error) {
-    console.error("[FileRegistry] Error getting file:", error);
+    console.warn("[FileRegistry] Error getting file:", error);
     return null;
   }
 }
@@ -213,7 +213,7 @@ export async function registerFilesBatch(
     });
     
     if (!response.ok) {
-      console.error("[FileRegistry] Failed to register batch:", response.statusText);
+      console.warn("[FileRegistry] Failed to register batch:", response.statusText);
       return { ok: false, count: 0 };
     }
     
@@ -221,7 +221,7 @@ export async function registerFilesBatch(
     console.log(`[FileRegistry] Registered batch: ${data.count} files`);
     return data;
   } catch (error) {
-    console.error("[FileRegistry] Error registering batch:", error);
+    console.warn("[FileRegistry] Error registering batch:", error);
     return { ok: false, count: 0 };
   }
 }

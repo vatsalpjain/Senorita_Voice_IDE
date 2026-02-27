@@ -423,6 +423,24 @@ const ScanLine = (): React.ReactElement => (
 );
 
 /* ============================================================
+   SENORITA LOGO
+   ============================================================ */
+const SenoritaLogo = ({ size = 120, dim = false }: { size?: number; dim?: boolean }): React.ReactElement => (
+  <img
+    src="/logo.png"
+    alt="Señorita"
+    style={{
+      width: size,
+      height: "auto",
+      objectFit: "contain",
+      flexShrink: 0,
+      display: "block",
+      opacity: dim ? 0.55 : 1,
+    }}
+  />
+);
+
+/* ============================================================
    NAV
    ============================================================ */
 const Nav = (): React.ReactElement => {
@@ -439,7 +457,7 @@ const Nav = (): React.ReactElement => {
       className="animate-slide-down"
       style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        padding: "0 40px", height: 64,
+        padding: "0 40px", height: 120,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: scrolled ? "rgba(7,9,14,0.85)" : "transparent",
         backdropFilter: scrolled ? "blur(20px)" : "none",
@@ -449,20 +467,7 @@ const Nav = (): React.ReactElement => {
     >
       {/* Logo */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 8,
-          background: "linear-gradient(135deg, #00D4E8, #00E5A0)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 0 16px rgba(0,212,232,0.4)",
-        }}>
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M3 9 L9 3 L15 9 L9 15 Z" stroke="#07090E" strokeWidth="1.5" fill="none" />
-            <circle cx="9" cy="9" r="2" fill="#07090E" />
-          </svg>
-        </div>
-        <span className="font-display" style={{ fontSize: "1.1rem", fontWeight: 700, color: "#EEF4FF", letterSpacing: "-0.02em" }}>
-          VoiceIDE
-        </span>
+        <SenoritaLogo size={400} />
       </div>
 
       {/* Links */}
@@ -1287,8 +1292,7 @@ const CTAFinale = (): React.ReactElement => (
 const Footer = (): React.ReactElement => (
   <footer style={{ padding: "32px 40px", borderTop: "1px solid #0F1420", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 20, height: 20, borderRadius: 4, background: "linear-gradient(135deg, #00D4E8, #00E5A0)", opacity: 0.7 }} />
-      <span className="font-display" style={{ color: "#2A3555", fontSize: "0.85rem" }}>VoiceIDE</span>
+      <SenoritaLogo size={60} dim />
     </div>
     <span style={{ color: "#1A2533", fontSize: "0.75rem", fontFamily: "'JetBrains Mono', monospace" }}>
       built at hackathon 2025

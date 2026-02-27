@@ -572,17 +572,12 @@ export default function DashboardPage() {
         }}>
           <div style={{
             maxWidth: 1100, margin: "0 auto",
-            padding: "0 24px", height: 52,
+            padding: "0 24px", height: 100,
             display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
               {/* Logo */}
-              <div style={{
-                width: 28, height: 28, borderRadius: 8,
-                background: "linear-gradient(135deg, #38bdf8, #6366f1)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.75rem", fontWeight: 700, color: "#fff",
-              }}>S</div>
+              <img src="/logo.png" alt="Señorita" style={{ width: 200, height: "auto", objectFit: "contain", display: "block", flexShrink: 0 }} />
               <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#e2e8f0" }}>
                 Senorita
               </span>

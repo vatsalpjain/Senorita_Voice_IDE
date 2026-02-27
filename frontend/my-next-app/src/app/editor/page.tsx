@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { VoicePanel, ChatMessage, CodeChange } from "../../components/VoicePanel";
+import { VoicePanel, ChatMessage, CodeChange, AIMode } from "../../components/VoicePanel";
 import { ConversationSummary, ConversationSummaryData } from "../../components/ConversationSummary";
 import Link from "next/link";
 import { pushActivity } from "../../store/activityStore";
@@ -382,15 +382,32 @@ const LANG_ICONS: Record<string, string> = {
 };
 
 const FILE_ICONS: Record<string, string> = {
-  ".tsx": "⬡",
-  ".ts": "⬡",
-  ".jsx": "⬡",
-  ".js": "◆",
-  ".css": "◈",
-  ".md": "◉",
-  ".json": "❴❵",
-  ".env": "⊛",
-  ".local": "⊛",
+  ".tsx": "__TSX__",
+  ".ts":  "__TS__",
+  ".jsx": "__JSX__",
+  ".js":  "__JS__",
+  ".css": "__CSS__",
+  ".md":  "__MD__",
+  ".json":"__JSON__",
+  ".env": "🔒",
+  ".local":"🔒",
+  ".py":  "__PY__",
+  ".sh":  "⚙️",
+  ".yml": "⚙️",
+  ".yaml":"⚙️",
+  ".toml":"⚙️",
+  ".lock":"🔒",
+  ".html":"__HTML__",
+  ".svg": "🖼️",
+  ".png": "🖼️",
+  ".jpg": "🖼️",
+  ".txt": "📄",
+  ".mjs": "__JS__",
+  ".cjs": "__JS__",
+  ".rs":  "🦀",
+  ".go":  "🐹",
+  ".java":"☕",
+  ".sql": "🗄️",
 };
 
 function getFileIcon(name: string): string {
@@ -690,8 +707,8 @@ const FileTreeNode = ({ node, depth, onFileClick, activeFileId }: FileTreeNodePr
             transition: "color 0.15s",
             borderRadius: 4,
           }}
-          onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#C8D5E8")}
-          onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#5A6888")}
+          onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#E2E8F0")}
+          onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#8A9BB8")}
         >
           <span style={{ fontSize: "0.6rem", transition: "transform 0.15s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
           <span style={{ fontSize: "0.85rem" }}>{open ? "📂" : "📁"}</span>
@@ -716,19 +733,70 @@ const FileTreeNode = ({ node, depth, onFileClick, activeFileId }: FileTreeNodePr
         borderLeft: isActive ? "2px solid #00D4E8" : "2px solid transparent",
         fontSize: "0.8rem",
         fontFamily: "'DM Sans', sans-serif",
-        color: isActive ? "#C8D5E8" : "#5A6888",
+        color: isActive ? "#E2E8F0" : "#8A9BB8",
         transition: "all 0.15s",
         borderRadius: "0 4px 4px 0",
       }}
       onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
-        if (!isActive) e.currentTarget.style.color = "#C8D5E8";
+        if (!isActive) e.currentTarget.style.color = "#E2E8F0";
       }}
       onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
-        if (!isActive) e.currentTarget.style.color = "#5A6888";
+        if (!isActive) e.currentTarget.style.color = "#8A9BB8";
       }}
     >
-      <span style={{ color: "#2A3555", fontSize: "0.75rem" }}>{getFileIcon(node.name)}</span>
-      <span>{node.name}</span>
+      {(() => {
+        const icon = getFileIcon(node.name);
+        if (icon === "__PY__") return (
+          <svg width="14" height="14" viewBox="0 0 256 255" style={{ flexShrink: 0 }}>
+            <defs>
+              <linearGradient id="pyB" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#387EB8"/><stop offset="100%" stopColor="#366994"/></linearGradient>
+              <linearGradient id="pyY" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#FFE052"/><stop offset="100%" stopColor="#FFC331"/></linearGradient>
+            </defs>
+            <path fill="url(#pyB)" d="M126.9 0C62.4 0 66.3 27.3 66.3 27.3l.1 28.3h61.8v8.5H43.7S0 59.1 0 124.3s37.9 62.9 37.9 62.9H60v-30.3s-1.3-37.9 37.3-37.9h64.3s36.1.6 36.1-34.9V36.4S203.1 0 126.9 0zM92.6 20.9a11.9 11.9 0 110 23.8 11.9 11.9 0 010-23.8z"/>
+            <path fill="url(#pyY)" d="M129.1 255c64.5 0 60.6-27.3 60.6-27.3l-.1-28.3H127.8v-8.5h84.5S256 196 256 130.7s-37.9-62.9-37.9-62.9H196v30.3s1.3 37.9-37.3 37.9H94.4S58.3 135.4 58.3 170.9v62.7S52.9 255 129.1 255zm34.3-20.9a11.9 11.9 0 110-23.8 11.9 11.9 0 010 23.8z"/>
+          </svg>
+        );
+        if (icon === "__TS__" || icon === "__TSX__") return (
+          <svg width="14" height="14" viewBox="0 0 400 400" style={{ flexShrink: 0 }}>
+            <rect width="400" height="400" rx="50" fill="#3178C6"/>
+            <text x="200" y="300" textAnchor="middle" fill="white" fontSize="210" fontWeight="900" fontFamily="'Arial Black',sans-serif">
+              {icon === "__TSX__" ? "TSX" : "TS"}
+            </text>
+          </svg>
+        );
+        if (icon === "__JS__" || icon === "__JSX__") return (
+          <svg width="14" height="14" viewBox="0 0 400 400" style={{ flexShrink: 0 }}>
+            <rect width="400" height="400" rx="50" fill="#F7DF1E"/>
+            <text x="200" y="310" textAnchor="middle" fill="#000" fontSize="210" fontWeight="900" fontFamily="'Arial Black',sans-serif">JS</text>
+          </svg>
+        );
+        if (icon === "__CSS__") return (
+          <svg width="14" height="14" viewBox="0 0 400 400" style={{ flexShrink: 0 }}>
+            <rect width="400" height="400" rx="50" fill="#264DE4"/>
+            <text x="200" y="310" textAnchor="middle" fill="white" fontSize="190" fontWeight="900" fontFamily="'Arial Black',sans-serif">CSS</text>
+          </svg>
+        );
+        if (icon === "__JSON__") return (
+          <svg width="14" height="14" viewBox="0 0 400 400" style={{ flexShrink: 0 }}>
+            <rect width="400" height="400" rx="50" fill="#8BC34A"/>
+            <text x="200" y="300" textAnchor="middle" fill="white" fontSize="180" fontWeight="900" fontFamily="'Arial Black',sans-serif">{"{ }"}</text>
+          </svg>
+        );
+        if (icon === "__MD__") return (
+          <svg width="14" height="14" viewBox="0 0 208 128" style={{ flexShrink: 0 }}>
+            <rect width="208" height="128" rx="16" fill="#083FA1"/>
+            <text x="104" y="96" textAnchor="middle" fill="white" fontSize="80" fontWeight="900" fontFamily="'Arial Black',sans-serif">MD</text>
+          </svg>
+        );
+        if (icon === "__HTML__") return (
+          <svg width="14" height="14" viewBox="0 0 400 400" style={{ flexShrink: 0 }}>
+            <rect width="400" height="400" rx="50" fill="#E34F26"/>
+            <text x="200" y="300" textAnchor="middle" fill="white" fontSize="160" fontWeight="900" fontFamily="'Arial Black',sans-serif">HTML</text>
+          </svg>
+        );
+        return <span style={{ fontSize: "0.85rem", lineHeight: 1 }}>{icon}</span>;
+      })()}
+      <span style={{ color: isActive ? "#E2E8F0" : "#8A9BB8" }}>{node.name}</span>
     </div>
   );
 };
@@ -902,17 +970,17 @@ const StatusBar = ({ activeTab, fileCount, cursorPos }: StatusBarProps): React.R
         <span>main</span>
       </span>
       <span style={{ color: "#2A3555" }}>|</span>
-      <span style={{ color: "#3A4560" }}>{fileCount} files</span>
+      <span style={{ color: "#5A6888" }}>{fileCount} files</span>
     </div>
 
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       {activeTab && (
         <>
-          <span style={{ color: "#3A4560" }}>
+          <span style={{ color: "#5A6888" }}>
             Ln {cursorPos.line}, Col {cursorPos.col}
           </span>
-          <span style={{ color: "#2A3555" }}>|</span>
-          <span style={{ color: "#3A4560" }}>UTF-8</span>
+          <span style={{ color: "#3A4560" }}>|</span>
+          <span style={{ color: "#5A6888" }}>UTF-8</span>
           <span style={{ color: "#2A3555" }}>|</span>
           <span style={{ color: LANG_COLORS[activeTab.language] || "#888", opacity: 0.8 }}>
             {activeTab.language.charAt(0).toUpperCase() + activeTab.language.slice(1)}
@@ -938,7 +1006,7 @@ interface ActivityBarProps {
 
 const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.ReactElement => {
   const icons = [
-    { id: "explorer", icon: "◫", label: "Explorer" },
+    { id: "explorer", icon: "⊞", label: "Explorer" },
     { id: "search",   icon: "⌕", label: "Search"   },
     { id: "git",      icon: "⎇", label: "Git"       },
     { id: "debug",    icon: "⬡", label: "Debug"     },
@@ -959,18 +1027,18 @@ const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.Re
           style={{
             width: 36, height: 36,
             display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", fontSize: "1.1rem",
-            color: activePanel === ic.id ? "#C8D5E8" : "#3A4560",
+            cursor: "pointer", fontSize: "1.4rem",
+            color: activePanel === ic.id ? "#E2E8F0" : "#8A9BB8",
             background: activePanel === ic.id ? "rgba(0,212,232,0.08)" : "transparent",
             borderLeft: activePanel === ic.id ? "2px solid #00D4E8" : "2px solid transparent",
             borderRadius: activePanel === ic.id ? "0 6px 6px 0" : "6px",
             transition: "all 0.15s",
           }}
           onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (activePanel !== ic.id) e.currentTarget.style.color = "#8A9BB8";
+            if (activePanel !== ic.id) e.currentTarget.style.color = "#C8D5E8";
           }}
           onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (activePanel !== ic.id) e.currentTarget.style.color = "#3A4560";
+            if (activePanel !== ic.id) e.currentTarget.style.color = "#8A9BB8";
           }}
         >
           {ic.icon}
@@ -989,6 +1057,161 @@ const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.Re
       }}>
         VI
       </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   SEARCH PANEL
+   ============================================================ */
+interface SearchResult {
+  fileId: string;
+  fileName: string;
+  matchType: "name" | "content";
+  preview: string;
+  node: FileNode;
+}
+
+function collectAllFiles(nodes: FileNode[]): FileNode[] {
+  const result: FileNode[] = [];
+  for (const node of nodes) {
+    if (node.type === "file") {
+      result.push(node);
+    } else if (node.children) {
+      result.push(...collectAllFiles(node.children));
+    }
+  }
+  return result;
+}
+
+const SearchPanel = ({
+  fileTree,
+  onFileClick,
+}: {
+  fileTree: FileNode[];
+  onFileClick: (node: FileNode) => void;
+}): React.ReactElement => {
+  const [query, setQuery] = useState<string>("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+
+  const runSearch = (q: string) => {
+    if (!q.trim()) { setResults([]); return; }
+    const lower = q.toLowerCase();
+    const allFiles = collectAllFiles(fileTree);
+    const found: SearchResult[] = [];
+
+    for (const file of allFiles) {
+      // Match filename
+      if (file.name.toLowerCase().includes(lower)) {
+        found.push({
+          fileId: file.id,
+          fileName: file.name,
+          matchType: "name",
+          preview: file.name,
+          node: file,
+        });
+        continue;
+      }
+      // Match content
+      if (file.content) {
+        const lines = file.content.split("\n");
+        const matchLine = lines.find(l => l.toLowerCase().includes(lower));
+        if (matchLine) {
+          found.push({
+            fileId: file.id,
+            fileName: file.name,
+            matchType: "content",
+            preview: matchLine.trim().slice(0, 60),
+            node: file,
+          });
+        }
+      }
+    }
+    setResults(found.slice(0, 40));
+  };
+
+  return (
+    <div style={{ padding: "10px 10px 0" }}>
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <span style={{
+          position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)",
+          color: "#5A6888", fontSize: "0.75rem", pointerEvents: "none",
+        }}>⌕</span>
+        <input
+          autoFocus
+          value={query}
+          onChange={e => { setQuery(e.target.value); runSearch(e.target.value); }}
+          placeholder="Search files & contents…"
+          style={{
+            width: "100%", background: "#111520",
+            border: "1px solid #2A3555", borderRadius: 6,
+            padding: "7px 10px 7px 26px", color: "#C8D5E8",
+            fontFamily: "'JetBrains Mono', monospace", fontSize: "0.73rem",
+            outline: "none", boxSizing: "border-box",
+            transition: "border-color 0.15s",
+          }}
+          onFocus={e => (e.currentTarget.style.borderColor = "#00D4E8")}
+          onBlur={e => (e.currentTarget.style.borderColor = "#2A3555")}
+        />
+      </div>
+
+      {query.trim() === "" && (
+        <div style={{ color: "#3A4560", fontSize: "0.7rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
+          Type to search file names or contents
+        </div>
+      )}
+
+      {query.trim() !== "" && results.length === 0 && (
+        <div style={{ color: "#3A4560", fontSize: "0.7rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
+          No results for &ldquo;{query}&rdquo;
+        </div>
+      )}
+
+      {results.map(r => (
+        <div
+          key={r.fileId + r.matchType}
+          onClick={() => onFileClick(r.node)}
+          style={{
+            padding: "6px 8px", borderRadius: 5, cursor: "pointer",
+            marginBottom: 2, transition: "background 0.12s",
+            border: "1px solid transparent",
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = "rgba(0,212,232,0.07)";
+            e.currentTarget.style.borderColor = "rgba(0,212,232,0.2)";
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.borderColor = "transparent";
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: r.matchType === "content" ? 2 : 0 }}>
+            <span style={{ fontSize: "0.8rem" }}>{getFileIcon(r.fileName)}</span>
+            <span style={{ color: "#C8D5E8", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>
+              {r.fileName}
+            </span>
+            <span style={{
+              marginLeft: "auto", fontSize: "0.58rem",
+              fontFamily: "'JetBrains Mono', monospace",
+              color: r.matchType === "name" ? "#00D4E8" : "#a78bfa",
+              background: r.matchType === "name" ? "rgba(0,212,232,0.1)" : "rgba(167,139,250,0.1)",
+              padding: "1px 5px", borderRadius: 3,
+            }}>
+              {r.matchType === "name" ? "name" : "match"}
+            </span>
+          </div>
+          {r.matchType === "content" && (
+            <div style={{
+              color: "#5A6888", fontSize: "0.67rem",
+              fontFamily: "'JetBrains Mono', monospace",
+              paddingLeft: 22, overflow: "hidden",
+              textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {r.preview}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };
@@ -1023,8 +1246,8 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
       borderBottom: "1px solid #1A2033", flexShrink: 0,
       display: "flex", justifyContent: "space-between", alignItems: "center",
     }}>
-      <span>{activePanel.toUpperCase()}</span>
-      <span style={{ color: "#1A2033", fontSize: "0.8rem", cursor: "pointer" }}>⋯</span>
+      <span style={{ color: "#5A6888" }}>{activePanel.toUpperCase()}</span>
+      <span style={{ color: "#3A4560", fontSize: "0.8rem", cursor: "pointer" }}>⋯</span>
     </div>
 
     {/* File tree */}
@@ -1079,21 +1302,7 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
         </>
       )}
       {activePanel === "search" && (
-        <div style={{ padding: 12 }}>
-          <input
-            placeholder="Search files..."
-            style={{
-              width: "100%", background: "#111520",
-              border: "1px solid #1A2033", borderRadius: 4,
-              padding: "6px 10px", color: "#C8D5E8",
-              fontFamily: "'JetBrains Mono', monospace", fontSize: "0.75rem",
-              outline: "none",
-            }}
-          />
-          <div style={{ color: "#2A3555", fontSize: "0.72rem", textAlign: "center", marginTop: 24, fontFamily: "'DM Sans', sans-serif" }}>
-            Type to search files
-          </div>
-        </div>
+        <SearchPanel fileTree={fileTree} onFileClick={onFileClick} />
       )}
       {activePanel === "git" && (
         <div style={{ padding: 12 }}>
@@ -1127,30 +1336,23 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
 interface TopBarProps {
   voiceOpen: boolean;
   onVoiceToggle: () => void;
+  activeMode?: AIMode;
 }
 
-const TopBar = ({ voiceOpen, onVoiceToggle }: TopBarProps): React.ReactElement => (
+const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask" }: TopBarProps): React.ReactElement => (
   <div style={{
-    height: 40, background: "#080B12",
+    height: 100, background: "#080B12",
     borderBottom: "1px solid #1A2033",
     display: "flex", alignItems: "center",
     padding: "0 16px", gap: 16, flexShrink: 0,
   }}>
     {/* Logo */}
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 8 }}>
-      <div style={{
-        width: 22, height: 22, borderRadius: 5,
-        background: "linear-gradient(135deg, #00D4E8, #00E5A0)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        boxShadow: "0 0 8px rgba(0,212,232,0.3)",
-      }}>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2 6L6 2L10 6L6 10Z" stroke="#07090E" strokeWidth="1.5" fill="none" />
-        </svg>
-      </div>
-      <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "0.82rem", fontWeight: 700, color: "#5A6888", letterSpacing: "-0.01em" }}>
-        VoiceIDE
-      </span>
+      <img
+        src="/logo.png"
+        alt="Señorita"
+        style={{ width: 200, height: "auto", objectFit: "contain", flexShrink: 0, display: "block" }}
+      />
     </div>
 
     {/* Menu items */}
@@ -1158,16 +1360,22 @@ const TopBar = ({ voiceOpen, onVoiceToggle }: TopBarProps): React.ReactElement =
       <span
         key={item}
         style={{
-          fontFamily: "'DM Sans', sans-serif", fontSize: "0.75rem",
-          color: "#3A4560", cursor: "pointer", padding: "4px 6px",
-          borderRadius: 3, transition: "color 0.15s, background 0.15s",
+          fontFamily: "'Inter', 'DM Sans', sans-serif",
+          fontSize: "0.82rem",
+          fontWeight: 600,
+          color: "#8A9BB8",
+          cursor: "pointer",
+          padding: "4px 8px",
+          borderRadius: 3,
+          letterSpacing: "0.01em",
+          transition: "color 0.15s, background 0.15s",
         }}
         onMouseEnter={(e: React.MouseEvent<HTMLSpanElement>) => {
-          e.currentTarget.style.color = "#C8D5E8";
+          e.currentTarget.style.color = "#F0F4FF";
           e.currentTarget.style.background = "#1A2033";
         }}
         onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => {
-          e.currentTarget.style.color = "#3A4560";
+          e.currentTarget.style.color = "#8A9BB8";
           e.currentTarget.style.background = "transparent";
         }}
       >
@@ -1190,36 +1398,34 @@ const TopBar = ({ voiceOpen, onVoiceToggle }: TopBarProps): React.ReactElement =
         <span style={{ color: "#2A3555", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace" }}>K</span>
       </div>
 
-      {/* Dashboard link */}
-      <Link
-        href="/dashboard"
-        style={{
-          display: "flex", alignItems: "center", gap: 5,
-          background: "transparent",
-          border: "1px solid #1A2033",
-          borderRadius: 5, padding: "4px 10px",
-          color: "#3A4560",
-          cursor: "pointer", transition: "all 0.2s",
-          fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif",
-          textDecoration: "none",
-        }}
-        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
-          e.currentTarget.style.color = "#a78bfa";
-          e.currentTarget.style.borderColor = "rgba(167,139,250,0.35)";
-        }}
-        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
-          e.currentTarget.style.color = "#3A4560";
-          e.currentTarget.style.borderColor = "#1A2033";
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="1" y="1" width="4" height="4" rx="0.8" />
-          <rect x="7" y="1" width="4" height="4" rx="0.8" />
-          <rect x="1" y="7" width="4" height="4" rx="0.8" />
-          <rect x="7" y="7" width="4" height="4" rx="0.8" />
-        </svg>
-        Dashboard
-      </Link>
+      {/* Active mode badge */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 5,
+        background: activeMode === "Debug" ? "rgba(251,191,36,0.1)"
+          : activeMode === "Create" ? "rgba(74,222,128,0.1)"
+          : activeMode === "Deep Thinking" ? "rgba(139,92,246,0.1)"
+          : "rgba(0,212,232,0.08)",
+        border: `1px solid ${
+          activeMode === "Debug" ? "rgba(251,191,36,0.35)"
+          : activeMode === "Create" ? "rgba(74,222,128,0.35)"
+          : activeMode === "Deep Thinking" ? "rgba(139,92,246,0.35)"
+          : "rgba(0,212,232,0.25)"
+        }`,
+        borderRadius: 5, padding: "3px 9px",
+        color: activeMode === "Debug" ? "#fbbf24"
+          : activeMode === "Create" ? "#4ade80"
+          : activeMode === "Deep Thinking" ? "#a78bfa"
+          : "#00D4E8",
+        fontSize: "0.65rem",
+        fontFamily: "'JetBrains Mono', monospace",
+        letterSpacing: "0.03em",
+        userSelect: "none",
+      }}>
+        <span style={{ fontSize: "0.6rem" }}>
+          {activeMode === "Debug" ? "⚡" : activeMode === "Create" ? "✚" : activeMode === "Deep Thinking" ? "◈" : "✦"}
+        </span>
+        {activeMode}
+      </div>
 
       {/* Voice toggle button */}
       <button
@@ -1385,6 +1591,7 @@ export default function EditorPage(): React.ReactElement {
   const [voiceOpen, setVoiceOpen]           = useState<boolean>(false);
   const [voicePanelW, setVoicePanelW]       = useState<number>(300);
   const [lastTranscript, setLastTranscript] = useState<string>("");
+  const [activeMode, setActiveMode]         = useState<AIMode>("Ask");
 
   /* ---- Summary panel state ---- */
   const [summaryData, setSummaryData]       = useState<ConversationSummaryData | null>(null);
@@ -1571,35 +1778,43 @@ export default function EditorPage(): React.ReactElement {
 
   // Open file - reads content from handle if available
   const handleFileOpen = useCallback(async (node: FileNode): Promise<void> => {
-    console.log("[handleFileOpen] Opening file:", node.name, "handle:", !!node.handle, "content:", node.content?.length);
     if (node.type !== "file") return;
 
     setActiveFileId(node.id);
 
-    // Check if tab already open
+    // If already open, just activate — but re-read if content was empty
     const existing = tabs.find((t) => t.id === node.id);
     if (existing) {
       setActiveTabId(node.id);
+      if (existing.content === "" && node.handle) {
+        try {
+          const fresh = await readFileContent(node.handle);
+          if (fresh) {
+            setTabs(prev => prev.map(t => t.id === node.id ? { ...t, content: fresh } : t));
+            registerFile(node.name, node.id, fresh, existing.language);
+          }
+        } catch { /* silent */ }
+      }
       return;
     }
 
     // Read content from file handle if available (dynamic folder)
     let content = node.content || "";
-    if (node.handle && !node.content) {
+    if (node.handle) {
       try {
-        console.log("[handleFileOpen] Reading content from handle...");
-        content = await readFileContent(node.handle);
-        console.log("[handleFileOpen] Read content length:", content.length);
+        const read = await readFileContent(node.handle);
+        if (read) content = read;
       } catch (err) {
-        console.error("Error reading file:", err);
-        content = "// Error reading file";
+        console.warn("Error reading file:", err);
+        content = "// Could not read file — try closing and re-opening the folder";
       }
     }
 
+    const lang = node.language || getLanguage(node.name);
     const newTab: Tab = {
       id: node.id,
       name: node.name,
-      language: node.language || getLanguage(node.name),
+      language: lang,
       content,
       isDirty: false,
     };
@@ -1607,9 +1822,7 @@ export default function EditorPage(): React.ReactElement {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(node.id);
     setShowMarkdown(false);
-    
-    // Register file with backend for context sharing
-    registerFile(node.name, node.id, content, newTab.language);
+    registerFile(node.name, node.id, content, lang);
   }, [tabs]);
 
   // Boot complete handler
@@ -1829,7 +2042,7 @@ export default function EditorPage(): React.ReactElement {
         }}
       >
         {/* Top menu bar */}
-        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} />
+        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} activeMode={activeMode} />
 
         {/* Main area */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -1971,6 +2184,7 @@ export default function EditorPage(): React.ReactElement {
                   onAIResponse={handleAIResponse}
                   onTranscriptChange={setLastTranscript}
                   onSummarize={handleSummarize}
+                  onModeChange={setActiveMode}
                   onCodeAction={(action) => {
                     // Handle multi-file edits - apply pending edit to each target file
                     if (action.edits && action.edits.length > 0) {

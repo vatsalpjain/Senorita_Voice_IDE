@@ -262,35 +262,6 @@ export function MonacoEditor({
       `}</style>
 
       <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#08090F" }}>
-        {/* File tab bar */}
-        <div style={{
-          display: "flex", alignItems: "center", height: 32,
-          background: "#0A0C14", borderBottom: "1px solid #1A2033",
-          padding: "0 8px", gap: 4,
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 6,
-            background: "#08090F", border: "1px solid #1A2033",
-            borderBottom: "1px solid #08090F",
-            padding: "4px 12px", borderRadius: "4px 4px 0 0",
-            marginBottom: -1,
-          }}>
-            <span style={{ color: "#00D4E8", fontSize: "0.7rem" }}>⬡</span>
-            <span style={{ color: "#C8D5E8", fontSize: "0.75rem", fontFamily: "'JetBrains Mono', monospace" }}>
-              {filename}
-            </span>
-            {previewValue !== null && (
-              <span style={{
-                background: "rgba(0,229,160,0.15)", color: "#00E5A0",
-                fontSize: "0.6rem", padding: "1px 5px", borderRadius: 3,
-                fontFamily: "'JetBrains Mono', monospace",
-              }}>
-                preview
-              </span>
-            )}
-          </div>
-        </div>
-
         {/* Pending action bar */}
         {pendingAction && (
           <div className="me-action-bar" style={{

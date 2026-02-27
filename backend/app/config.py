@@ -17,7 +17,14 @@ class Settings(BaseSettings):
 
     # App settings
     APP_ENV: str = "development"
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     LOG_LEVEL: str = "INFO"
 
     # Load environment variables from .env file

@@ -28,12 +28,15 @@ export interface CodeChange {
   code?: string;          // the actual code snippet
 }
 
+export type AIMode = "Ask" | "Debug" | "Create" | "Deep Thinking";
+
 export interface VoicePanelProps {
   editorContext: EditorContext;
   onAIResponse: (response: AICommandResponse) => void;
   onTranscriptChange?: (transcript: string) => void;
   onCodeAction?: (action: CodeActionData) => void;
   onSummarize?: (messages: ChatMessage[], codeChanges: CodeChange[]) => void;
+  onModeChange?: (mode: AIMode) => void;
 }
 
 type MessageRole = "user" | "assistant" | "error";
@@ -254,12 +257,19 @@ export function VoicePanel({
   onTranscriptChange,
   onCodeAction,
   onSummarize,
+  onModeChange,
 }: VoicePanelProps): React.ReactElement {
   const [messages, setMessages]         = useState<ChatMessage[]>([]);
   const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [codeChanges, setCodeChanges]   = useState<CodeChange[]>([]);
+  const [mode, setMode]                 = useState<AIMode>("Ask");
+
+  const handleModeChange = (m: AIMode) => {
+    setMode(m);
+    onModeChange?.(m);
+  };
 
   const chatEndRef      = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
@@ -596,7 +606,7 @@ export function VoicePanel({
       <div style={{
         display: "flex", flexDirection: "column", height: "100%",
         background: "#08090F", fontFamily: "'DM Sans', sans-serif",
-        overflow: "hidden",
+        overflow: "hidden", position: "relative",
       }}>
 
         {/* ── Panel header ── */}
@@ -608,27 +618,17 @@ export function VoicePanel({
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{
               fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
-              fontFamily: "'JetBrains Mono', monospace", color: "#2A3555",
+              fontFamily: "'JetBrains Mono', monospace", color: "#5A6888",
             }}>AI Assistant</span>
-            <span style={{
-              width: 5, height: 5, borderRadius: "50%", display: "inline-block",
-              background: isActive ? "#00D4E8" : isProcessing ? "#F6C90E"
-                : wsConnected ? "#00E5A0" : "#FF4D6D",
-              boxShadow: isActive ? "0 0 5px #00D4E8" : "none",
-              transition: "background 0.3s",
-            }} />
-            <span style={{
-              fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-              color: isActive ? "#00D4E8" : isProcessing ? "#F6C90E"
-                : wsConnected ? "#00E5A0" : "#FF4D6D",
-              transition: "color 0.3s",
-            }}>
-              {isActive ? "Listening…"
-                : isProcessing ? "Thinking…"
-                : wsConnected ? "Connected"
-                : ws.status === "connecting" ? "Connecting…"
-                : "Offline (mock)"}
-            </span>
+            {(isActive || isProcessing) && (
+              <span style={{
+                fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
+                color: isActive ? "#00D4E8" : "#F6C90E",
+                transition: "color 0.3s",
+              }}>
+                {isActive ? "Listening…" : "Thinking…"}
+              </span>
+            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -648,33 +648,39 @@ export function VoicePanel({
               </button>
             )}
 
-            {/* Auto-speak toggle */}
+            {/* Voice toggle switch */}
             {tts.isSupported && (
-              <button
+              <div
                 onClick={() => { tts.setAutoSpeak(!tts.autoSpeak); if (tts.isSpeaking) tts.stop(); }}
-                title={tts.autoSpeak ? "Auto-speak ON — click to turn off" : "Auto-speak OFF — click to turn on"}
+                title={tts.autoSpeak ? "Voice ON — click to turn off" : "Voice OFF — click to turn on"}
                 style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  background: tts.autoSpeak ? "rgba(0,229,160,0.1)" : "transparent",
-                  border: `1px solid ${tts.autoSpeak ? "rgba(0,229,160,0.35)" : "#1A2033"}`,
-                  color: tts.autoSpeak ? "#00E5A0" : "#2A3555",
-                  fontSize: "0.58rem", padding: "2px 7px", borderRadius: 3, cursor: "pointer",
-                  fontFamily: "'JetBrains Mono', monospace", transition: "all 0.2s",
+                  display: "flex", alignItems: "center", gap: 6,
+                  cursor: "pointer", userSelect: "none",
                 }}
-                onMouseEnter={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#00E5A0"; e.currentTarget.style.borderColor = "rgba(0,229,160,0.3)"; }}}
-                onMouseLeave={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; }}}
               >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
-                  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                  <path d="M1 3.5h2l2.5-2.5v8L3 6.5H1z" />
-                  {tts.autoSpeak ? (
-                    <><path d="M7 3.5a2.5 2.5 0 0 1 0 3.5" /><path d="M8.5 2a5 5 0 0 1 0 6.5" /></>
-                  ) : (
-                    <line x1="7" y1="3.5" x2="9.5" y2="7" />
-                  )}
-                </svg>
-                {tts.autoSpeak ? "voice on" : "voice off"}
-              </button>
+                <span style={{
+                  fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
+                  color: tts.autoSpeak ? "#00E5A0" : "#3A4560",
+                  transition: "color 0.2s",
+                }}>voice</span>
+                {/* Toggle pill */}
+                <div style={{
+                  width: 28, height: 15, borderRadius: 8,
+                  background: tts.autoSpeak ? "rgba(0,229,160,0.25)" : "#111824",
+                  border: `1px solid ${tts.autoSpeak ? "rgba(0,229,160,0.5)" : "#1A2033"}`,
+                  position: "relative", transition: "all 0.2s",
+                  flexShrink: 0,
+                }}>
+                  <div style={{
+                    position: "absolute",
+                    top: 2, left: tts.autoSpeak ? 14 : 2,
+                    width: 9, height: 9, borderRadius: "50%",
+                    background: tts.autoSpeak ? "#00E5A0" : "#3A4560",
+                    boxShadow: tts.autoSpeak ? "0 0 4px #00E5A0" : "none",
+                    transition: "all 0.2s",
+                  }} />
+                </div>
+              </div>
             )}
 
             {/* Summarize button */}
@@ -817,6 +823,38 @@ export function VoicePanel({
 
         {/* ── Input bar ── */}
         <div style={{ flexShrink: 0, borderTop: "1px solid #111824", padding: "8px 10px", background: "#08090F" }}>
+          {/* Mode dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <select
+              value={mode}
+              onChange={e => handleModeChange(e.target.value as AIMode)}
+              style={{
+                background: "#0E111A",
+                border: `1px solid ${
+                  mode === "Debug" ? "rgba(251,191,36,0.4)"
+                  : mode === "Create" ? "rgba(74,222,128,0.4)"
+                  : mode === "Deep Thinking" ? "rgba(139,92,246,0.4)"
+                  : "rgba(0,212,232,0.3)"
+                }`,
+                borderRadius: 6,
+                color: mode === "Debug" ? "#fbbf24"
+                  : mode === "Create" ? "#4ade80"
+                  : mode === "Deep Thinking" ? "#a78bfa"
+                  : "#00D4E8",
+                fontSize: "0.68rem",
+                fontFamily: "'JetBrains Mono', monospace",
+                padding: "4px 8px",
+                cursor: "pointer",
+                outline: "none",
+                flex: 1,
+              }}
+            >
+              <option value="Ask">✦ Ask</option>
+              <option value="Debug">⚡ Debug</option>
+              <option value="Create">✚ Create</option>
+              <option value="Deep Thinking">◈ Deep Thinking</option>
+            </select>
+          </div>
           <div style={{
             display: "flex", alignItems: "flex-end", gap: 8,
             background: "#0E111A",

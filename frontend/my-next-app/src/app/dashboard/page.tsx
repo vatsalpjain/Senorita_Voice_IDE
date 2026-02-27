@@ -577,7 +577,7 @@ export default function DashboardPage() {
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
               {/* Logo */}
-              <img src="/logo.png" alt="Señorita" style={{ width: 200, height: "auto", objectFit: "contain", display: "block", flexShrink: 0 }} />
+              <img src="/logo3.png" alt="Señorita" style={{ width: 200, height: "auto", objectFit: "contain", display: "block", flexShrink: 0, mixBlendMode: "screen" }} />
               <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#e2e8f0" }}>
                 Senorita
               </span>

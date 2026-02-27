@@ -575,45 +575,34 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
 
       {/* Central orb */}
       <div style={{
-        position: "relative", marginBottom: 48,
+        position: "relative", marginBottom: "-60px",
         animation: "bootPulse 2s ease-in-out infinite",
+        zIndex: 2,
       }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: "50%",
-          background: "linear-gradient(135deg, #00D4E8, #00E5A0)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 0 60px rgba(0,212,232,0.4), 0 0 120px rgba(0,212,232,0.2)",
-          animation: "spin 3s linear infinite",
-        }}>
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-            <path d="M6 20 L20 6 L34 20 L20 34 Z" stroke="#07090E" strokeWidth="2.5" fill="none" />
-            <circle cx="20" cy="20" r="5" fill="#07090E" />
-          </svg>
-        </div>
-        {/* Rings */}
-        {[1, 2, 3].map((ring) => (
-          <div key={ring} style={{
-            position: "absolute",
-            top: "50%", left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: 80 + ring * 40,
-            height: 80 + ring * 40,
-            borderRadius: "50%",
-            border: `1px solid rgba(0,212,232,${0.15 / ring})`,
-            animation: `ringPulse ${1.5 + ring * 0.5}s ease-in-out infinite ${ring * 0.2}s`,
+        <img
+          src="/logo3.png"
+          alt="Senorita"
+          style={{ width: 500, height: "auto", objectFit: "contain", display: "block", mixBlendMode: "screen" }}
+        />
+      </div>
+
+      {/* Voice waveform */}
+      <div style={{ display: "flex", alignItems: "center", gap: 3, height: "70vh", width: "90vw", justifyContent: "center", marginBottom: 32, zIndex: 1 }}>
+        {[0.55,0.8,1,0.75,0.95,1,0.65,0.9,0.7,1,0.85,0.55,0.95,0.75,1,0.9,0.6,0.85,1,0.5,0.75,0.95,0.8,1,0.65,0.9,0.7,0.55,1,0.85,0.6,0.95,0.7,1,0.9,0.55,0.8,1,0.7,0.95,0.6,0.85,0.75,1,0.7,0.55,0.9,0.8,0.6,1,0.75,0.9,0.55,0.8,1,0.65,0.95,0.7,0.85,1].map((h, i) => (
+          <div key={i} style={{
+            flex: 1,
+            maxWidth: 5,
+            minWidth: 2,
+            height: `${h * 100}%`,
+            borderRadius: 99,
+            background: `linear-gradient(180deg, #00FFFF 0%, #00D4E8 35%, #4DD9E8 65%, rgba(0,212,232,0.12) 100%)`,
+            boxShadow: `0 0 8px rgba(0,212,232,0.8), 0 0 20px rgba(0,212,232,0.35)`,
+            animation: `bootWaveBar 2s ease-in-out ${(i % 10) * 0.1}s infinite`,
+            transformOrigin: "center",
           }} />
         ))}
       </div>
 
-      {/* Logo text */}
-      <div style={{
-        fontFamily: "'Syne', sans-serif",
-        fontSize: "1.5rem", fontWeight: 800,
-        color: "#EEF4FF", letterSpacing: "-0.03em",
-        marginBottom: 8,
-      }}>
-        VoiceIDE
-      </div>
       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem", color: "#2A3555", marginBottom: 48, letterSpacing: "0.08em" }}>
         v0.1.0 — hackathon edition
       </div>
@@ -663,6 +652,10 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
       </div>
 
       <style>{`
+        @keyframes bootWaveBar {
+          0%,100% { transform: scaleY(0.15); opacity: 0.4; }
+          50%     { transform: scaleY(1); opacity: 1; }
+        }
         @keyframes bootPulse {
           0%,100% { transform: scale(1); }
           50% { transform: scale(1.05); }
@@ -1349,9 +1342,9 @@ const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask" }: TopBarProps): 
     {/* Logo */}
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 8 }}>
       <img
-        src="/logo.png"
+        src="/logo3.png"
         alt="Señorita"
-        style={{ width: 200, height: "auto", objectFit: "contain", flexShrink: 0, display: "block" }}
+        style={{ width: 200, height: "auto", objectFit: "contain", flexShrink: 0, display: "block", mixBlendMode: "screen" }}
       />
     </div>
 

@@ -427,7 +427,7 @@ const ScanLine = (): React.ReactElement => (
    ============================================================ */
 const SenoritaLogo = ({ size = 120, dim = false }: { size?: number; dim?: boolean }): React.ReactElement => (
   <img
-    src="/logo.png"
+    src="/logo3.png"
     alt="Señorita"
     style={{
       width: size,
@@ -435,6 +435,7 @@ const SenoritaLogo = ({ size = 120, dim = false }: { size?: number; dim?: boolea
       objectFit: "contain",
       flexShrink: 0,
       display: "block",
+      mixBlendMode: "screen",
       opacity: dim ? 0.55 : 1,
     }}
   />
@@ -457,7 +458,7 @@ const Nav = (): React.ReactElement => {
       className="animate-slide-down"
       style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        padding: "0 40px", height: 120,
+        padding: "0 40px", height: 100,
         display: "flex", alignItems: "center", justifyContent: "space-between",
         background: scrolled ? "rgba(7,9,14,0.85)" : "transparent",
         backdropFilter: scrolled ? "blur(20px)" : "none",
@@ -467,7 +468,7 @@ const Nav = (): React.ReactElement => {
     >
       {/* Logo */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <SenoritaLogo size={400} />
+        <SenoritaLogo size={200} />
       </div>
 
       {/* Links */}
@@ -488,6 +489,14 @@ const Nav = (): React.ReactElement => {
       {/* CTA */}
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <span style={{ color: "#3A4560", fontSize: "0.875rem", cursor: "none" }}>Sign in</span>
+        <a href="/dashboard" style={{ textDecoration: "none" }}>
+          <button style={{ padding: "10px 22px", fontSize: "0.82rem", background: "transparent", border: "1px solid #3A5070", borderRadius: 8, color: "#C8D5E8", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#00D4E8"; e.currentTarget.style.color = "#00D4E8"; }}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#3A5070"; e.currentTarget.style.color = "#C8D5E8"; }}
+          >
+            Dashboard
+          </button>
+        </a>
         <button className="btn-primary" style={{ padding: "10px 22px", fontSize: "0.82rem" }}>
           Open IDE →
         </button>
@@ -815,15 +824,14 @@ const GlobeHero = (): React.ReactElement => (
       <h1
         className="font-display animate-fade-up"
         style={{
-          fontSize: "clamp(2rem, 4vw, 3.2rem)", fontWeight: 800,
-          letterSpacing: "-0.04em", lineHeight: 1.1,
-          color: "#EEF4FF", margin: 0,
+          fontSize: "clamp(1.4rem, 3.2vw, 2.8rem)", fontWeight: 800,
+          letterSpacing: "-0.03em", lineHeight: 1.2,
+          color: "#EEF4FF", margin: 0, whiteSpace: "nowrap",
           animationDelay: "0.22s", opacity: 0, animationFillMode: "forwards",
           textShadow: "0 0 80px rgba(0,212,232,0.18)",
         }}
       >
-        Code with your{" "}
-        <span style={{
+        Code with your <span style={{
           background: "linear-gradient(90deg, #135bec 0%, #00D4E8 45%, #8b5cf6 100%)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
         }}>voice.</span>

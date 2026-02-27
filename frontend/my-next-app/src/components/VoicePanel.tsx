@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useVoice, VoiceStatus } from "../hooks/useVoice";
+import { useVoice } from "../hooks/useVoice";
 import { useTTS } from "../hooks/useTTS";
-import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
+import { useVoiceSocket, WSResponse, WSError } from "../hooks/useVoiceSocket";
 import {
-  sendVoiceCommandWithFallback,
-  dispatchWSMessage,
   EditorContext,
   AICommandResponse,
   classifyIntent,
@@ -237,7 +235,7 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 }
 
 /* ============================================================
-   MAIN VOICE PANEL — Chat style with WebSocket streaming
+   MAIN VOICE PANEL — Chat style
    ============================================================ */
 export function VoicePanel({
   editorContext,
@@ -245,16 +243,12 @@ export function VoicePanel({
   onTranscriptChange,
   onCodeAction,
 }: VoicePanelProps): React.ReactElement {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [textInput, setTextInput] = useState("");
+  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatEndRef  = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Streaming state — accumulate chunks into a live assistant bubble
-  const streamBubbleId = useRef<string | null>(null);
-  const streamChunks = useRef<string[]>([]);
 
   /* ── Auto-grow textarea ── */
   const autoGrow = () => {
@@ -264,12 +258,12 @@ export function VoicePanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
-  /* ── Auto-scroll to bottom on new message ── */
+  /* ── Auto-scroll ── */
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* ── TTS hook ── */
+  /* ── TTS ── */
   const tts = useTTS({ rate: 1, pitch: 1, volume: 1, lang: "en-US" });
 
   /* ── WebSocket connection ── */
@@ -327,19 +321,20 @@ export function VoicePanel({
           streamChunks.current = [];
           setIsProcessing(false);
 
-          // Notify parent
-          onAIResponse({
-            intent,
-            code,
-            explanation: text,
-            insertMode: "none",
-          });
+      if (msg.type === "error") {
+        setMessages(prev => [...prev, {
+          id: `e-${Date.now()}`, role: "error",
+          text: msg.message, code: null, timestamp: new Date(),
+        }]);
+        return;
+      }
 
-          // Auto-speak via Web Speech TTS
-          if (tts.autoSpeak && tts.isSupported && text) {
-            tts.speak(text);
-          }
-        },
+      const r = msg as WSResponse;
+
+      /* Handle open_file intent — tell the editor to open the file */
+      if (r.intent === "open_file" && r.openFile && onOpenFile) {
+        onOpenFile(r.openFile);
+      }
 
         onError: (message) => {
           const errMsg: ChatMessage = {
@@ -425,19 +420,15 @@ export function VoicePanel({
     }, [onAIResponse, onCodeAction, tts]),
   });
 
-  /* ── Core command handler ── */
-  const handleCommand = useCallback(async (transcript: string) => {
+  /* ── Core command handler (voice + text share this) ── */
+  const handleCommand = useCallback((transcript: string) => {
     const trimmed = transcript.trim();
     if (!trimmed || isProcessing) return;
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: "user",
-      text: trimmed,
-      code: null,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, {
+      id: `u-${Date.now()}`, role: "user",
+      text: trimmed, code: null, timestamp: new Date(),
+    }]);
     setIsProcessing(true);
     onTranscriptChange?.(trimmed);
 
@@ -511,16 +502,12 @@ export function VoicePanel({
     lang: "en-US",
     continuous: false,
     interimResults: true,
-    onFinalTranscript: (text) => handleCommand(text),
+    onFinalTranscript: handleCommand,
     onError: (err) => {
-      const errMsg: ChatMessage = {
-        id: `e-${Date.now()}`,
-        role: "error",
-        text: err,
-        code: null,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errMsg]);
+      setMessages(prev => [...prev, {
+        id: `e-${Date.now()}`, role: "error",
+        text: err, code: null, timestamp: new Date(),
+      }]);
     },
   });
 
@@ -529,21 +516,17 @@ export function VoicePanel({
     if (!textInput.trim() || isProcessing) return;
     handleCommand(textInput);
     setTextInput("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "36px";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "36px";
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleTextSubmit();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSubmit(); }
   };
 
-  const isActive = voice.status === "listening" || voice.status === "requesting";
-  const liveInterim = voice.interimTranscript;
+  const isActive       = voice.status === "listening" || voice.status === "requesting";
+  const liveInterim    = voice.interimTranscript;
   const detectedIntent = liveInterim ? classifyIntent(liveInterim) : null;
+  const wsConnected    = ws.status === "connected";
 
   return (
     <>
@@ -566,44 +549,37 @@ export function VoicePanel({
               fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
               fontFamily: "'JetBrains Mono', monospace", color: "#2A3555",
             }}>AI Assistant</span>
-            {/* WS status dot */}
             <span style={{
               width: 5, height: 5, borderRadius: "50%", display: "inline-block",
-              background: ws.isConnected
-                ? isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#00E5A0"
-                : "#FF4D6D",
+              background: isActive ? "#00D4E8" : isProcessing || ws.isThinking ? "#F6C90E"
+                : wsConnected ? "#00E5A0" : "#FF4D6D",
               boxShadow: isActive ? "0 0 5px #00D4E8" : "none",
               transition: "background 0.3s",
             }} />
             <span style={{
               fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-              color: ws.isConnected
-                ? isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#00E5A0"
-                : "#FF4D6D",
+              color: isActive ? "#00D4E8" : isProcessing || ws.isThinking ? "#F6C90E"
+                : wsConnected ? "#00E5A0" : "#FF4D6D",
               transition: "color 0.3s",
             }}>
-              {!ws.isConnected ? "Offline" :
-                isActive ? "Listening…" :
-                  isProcessing ? "Thinking…" :
-                    voice.isSupported ? "Connected" : "Text only"}
+              {isActive ? "Listening…"
+                : isProcessing || ws.isThinking ? "Thinking…"
+                : wsConnected ? "Connected"
+                : ws.status === "connecting" ? "Connecting…"
+                : "Offline (mock)"}
             </span>
           </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Stop speaking button */}
+            {/* Stop TTS button */}
             {tts.isSpeaking && (
-              <button
-                onClick={tts.stop}
-                title="Stop speaking"
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  background: "rgba(0,212,232,0.1)",
-                  border: "1px solid rgba(0,212,232,0.35)",
-                  color: "#00D4E8", fontSize: "0.58rem", padding: "2px 7px",
-                  borderRadius: 3, cursor: "pointer",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  animation: "vpMicPulse 1.8s ease-in-out infinite",
-                }}
-              >
+              <button onClick={tts.stop} title="Stop speaking" style={{
+                display: "flex", alignItems: "center", gap: 4,
+                background: "rgba(0,212,232,0.1)", border: "1px solid rgba(0,212,232,0.35)",
+                color: "#00D4E8", fontSize: "0.58rem", padding: "2px 7px",
+                borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace",
+                animation: "vpMicPulse 1.8s ease-in-out infinite",
+              }}>
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="#00D4E8">
                   <rect x="0" y="0" width="8" height="8" rx="1" />
                 </svg>
@@ -614,31 +590,24 @@ export function VoicePanel({
             {/* Auto-speak toggle */}
             {tts.isSupported && (
               <button
-                onClick={() => {
-                  tts.setAutoSpeak(!tts.autoSpeak);
-                  if (tts.isSpeaking) tts.stop();
-                }}
+                onClick={() => { tts.setAutoSpeak(!tts.autoSpeak); if (tts.isSpeaking) tts.stop(); }}
                 title={tts.autoSpeak ? "Auto-speak ON — click to turn off" : "Auto-speak OFF — click to turn on"}
                 style={{
                   display: "flex", alignItems: "center", gap: 4,
                   background: tts.autoSpeak ? "rgba(0,229,160,0.1)" : "transparent",
                   border: `1px solid ${tts.autoSpeak ? "rgba(0,229,160,0.35)" : "#1A2033"}`,
                   color: tts.autoSpeak ? "#00E5A0" : "#2A3555",
-                  fontSize: "0.58rem", padding: "2px 7px",
-                  borderRadius: 3, cursor: "pointer",
+                  fontSize: "0.58rem", padding: "2px 7px", borderRadius: 3, cursor: "pointer",
                   fontFamily: "'JetBrains Mono', monospace", transition: "all 0.2s",
                 }}
-                onMouseEnter={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#00E5A0"; e.currentTarget.style.borderColor = "rgba(0,229,160,0.3)"; } }}
-                onMouseLeave={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; } }}
+                onMouseEnter={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#00E5A0"; e.currentTarget.style.borderColor = "rgba(0,229,160,0.3)"; }}}
+                onMouseLeave={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; }}}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
                   stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
                   <path d="M1 3.5h2l2.5-2.5v8L3 6.5H1z" />
                   {tts.autoSpeak ? (
-                    <>
-                      <path d="M7 3.5a2.5 2.5 0 0 1 0 3.5" />
-                      <path d="M8.5 2a5 5 0 0 1 0 6.5" />
-                    </>
+                    <><path d="M7 3.5a2.5 2.5 0 0 1 0 3.5" /><path d="M8.5 2a5 5 0 0 1 0 6.5" /></>
                   ) : (
                     <line x1="7" y1="3.5" x2="9.5" y2="7" />
                   )}
@@ -647,7 +616,7 @@ export function VoicePanel({
               </button>
             )}
 
-            {/* Clear chat */}
+            {/* Clear */}
             {messages.length > 0 && (
               <button
                 onClick={() => { setMessages([]); tts.stop(); }}
@@ -685,18 +654,15 @@ export function VoicePanel({
                   <line x1="7.5" y1="19" x2="12.5" y2="19" />
                 </svg>
               </div>
-              <p style={{ fontSize: "0.75rem", color: "#3A4560", margin: 0 }}>
-                Ask anything about your code
-              </p>
+              <p style={{ fontSize: "0.75rem", color: "#3A4560", margin: 0 }}>Ask anything about your code</p>
               <div style={{ fontSize: "0.68rem", color: "#2A3555", lineHeight: 1.6 }}>
                 <span style={{ color: "#4DD9E8" }}>&quot;generate a fetch helper&quot;</span><br />
                 <span style={{ color: "#4DD9E8" }}>&quot;refactor this to async/await&quot;</span><br />
-                <span style={{ color: "#4DD9E8" }}>&quot;explain what this does&quot;</span>
+                <span style={{ color: "#4DD9E8" }}>&quot;open page.tsx and explain it&quot;</span>
               </div>
-              {/* WS connection indicator in empty state */}
               <div style={{ marginTop: 8, fontSize: "0.58rem", fontFamily: "'JetBrains Mono', monospace" }}>
-                <span style={{ color: ws.isConnected ? "#00E5A0" : "#FF4D6D" }}>
-                  ● {ws.isConnected ? "Connected to backend" : "Backend offline — using mock"}
+                <span style={{ color: wsConnected ? "#00E5A0" : "#FF4D6D" }}>
+                  {wsConnected ? "● Connected to backend" : "● Backend offline — using mock"}
                 </span>
               </div>
             </div>
@@ -706,11 +672,10 @@ export function VoicePanel({
             ))
           )}
 
-          {/* Typing / listening indicator */}
-          {(isProcessing && !streamBubbleId.current) && (
+          {/* Thinking dots */}
+          {(isProcessing || ws.isThinking) && (
             <div style={{
-              display: "flex", flexDirection: "column",
-              alignItems: "flex-start", padding: "4px 12px",
+              display: "flex", alignItems: "flex-start", padding: "4px 12px",
               animation: "vpSlideIn 0.2s ease forwards",
             }}>
               <div style={{
@@ -720,8 +685,7 @@ export function VoicePanel({
               }}>
                 {[0, 1, 2].map(i => (
                   <div key={i} style={{
-                    width: 6, height: 6, borderRadius: "50%",
-                    background: "#00D4E8",
+                    width: 6, height: 6, borderRadius: "50%", background: "#00D4E8",
                     animation: `vpWaveBar 1s ease-in-out infinite ${i * 0.18}s`,
                     transformOrigin: "center",
                   }} />
@@ -730,30 +694,23 @@ export function VoicePanel({
             </div>
           )}
 
-          {/* Live interim transcript while voice is active */}
+          {/* Live interim voice transcript */}
           {isActive && liveInterim && (
             <div style={{
-              display: "flex", flexDirection: "column",
-              alignItems: "flex-end", padding: "4px 12px",
-              animation: "vpSlideIn 0.2s ease forwards",
+              display: "flex", flexDirection: "column", alignItems: "flex-end",
+              padding: "4px 12px", animation: "vpSlideIn 0.2s ease forwards",
             }}>
               <div style={{
                 maxWidth: "88%", background: "rgba(0,212,232,0.08)",
                 border: "1px solid rgba(0,212,232,0.15)",
-                borderRadius: "12px 12px 2px 12px",
-                padding: "6px 10px",
+                borderRadius: "12px 12px 2px 12px", padding: "6px 10px",
               }}>
-                <p style={{
-                  fontSize: "0.76rem", color: "#8A9BB8", margin: 0, fontStyle: "italic",
-                  fontFamily: "'DM Sans', sans-serif",
-                }}>
+                <p style={{ fontSize: "0.76rem", color: "#8A9BB8", margin: 0, fontStyle: "italic", fontFamily: "'DM Sans', sans-serif" }}>
                   {liveInterim}
                   <span style={{ animation: "vpBlink 0.9s ease-in-out infinite", color: "#00D4E8", marginLeft: 2 }}>│</span>
                 </p>
                 {detectedIntent && detectedIntent !== "unknown" && (
-                  <div style={{ marginTop: 4 }}>
-                    <IntentBadge intent={detectedIntent} />
-                  </div>
+                  <div style={{ marginTop: 4 }}><IntentBadge intent={detectedIntent} /></div>
                 )}
               </div>
             </div>
@@ -763,19 +720,13 @@ export function VoicePanel({
         </div>
 
         {/* ── Input bar ── */}
-        <div style={{
-          flexShrink: 0, borderTop: "1px solid #111824",
-          padding: "8px 10px",
-          background: "#08090F",
-        }}>
+        <div style={{ flexShrink: 0, borderTop: "1px solid #111824", padding: "8px 10px", background: "#08090F" }}>
           <div style={{
             display: "flex", alignItems: "flex-end", gap: 8,
             background: "#0E111A",
             border: `1px solid ${isActive ? "rgba(0,212,232,0.4)" : "#1A2033"}`,
-            borderRadius: 10, padding: "6px 8px",
-            transition: "border-color 0.2s",
+            borderRadius: 10, padding: "6px 8px", transition: "border-color 0.2s",
           }}>
-            {/* Textarea */}
             <textarea
               ref={textareaRef}
               value={textInput}
@@ -787,39 +738,32 @@ export function VoicePanel({
               style={{
                 flex: 1, background: "transparent", border: "none", outline: "none",
                 color: "#C8D5E8", fontSize: "0.8rem", lineHeight: 1.5,
-                fontFamily: "'DM Sans', sans-serif",
-                resize: "none", overflowY: "hidden",
-                minHeight: 22, maxHeight: 120,
-                padding: 0, margin: 0,
+                fontFamily: "'DM Sans', sans-serif", resize: "none", overflowY: "hidden",
+                minHeight: 22, maxHeight: 120, padding: 0, margin: 0,
                 opacity: isProcessing ? 0.5 : 1,
               }}
             />
-
-            {/* Waveform — shown when listening */}
             {isActive && (
               <div style={{ paddingBottom: 3, flexShrink: 0 }}>
                 <MiniWaveform active={true} />
               </div>
             )}
-
-            {/* Send button */}
+            {/* Send */}
             <button
               onClick={handleTextSubmit}
               disabled={!textInput.trim() || isProcessing}
               title="Send (Enter)"
               style={{
                 width: 30, height: 30, borderRadius: 7, flexShrink: 0,
-                background: textInput.trim() && !isProcessing
-                  ? "#00D4E8" : "rgba(0,212,232,0.06)",
+                background: textInput.trim() && !isProcessing ? "#00D4E8" : "rgba(0,212,232,0.06)",
                 border: `1px solid ${textInput.trim() && !isProcessing ? "#00D4E8" : "#1A2033"}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: textInput.trim() && !isProcessing ? "pointer" : "not-allowed",
-                transition: "all 0.18s", flexDirection: "column",
+                transition: "all 0.18s",
               }}
             >
-              {isProcessing ? (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                  style={{ animation: "vpSpin 0.8s linear infinite" }}>
+              {isProcessing || ws.isThinking ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: "vpSpin 0.8s linear infinite" }}>
                   <circle cx="7" cy="7" r="5.5" stroke="#00D4E8" strokeWidth="1.8" strokeDasharray="20 16" />
                 </svg>
               ) : (
@@ -831,20 +775,14 @@ export function VoicePanel({
                 </svg>
               )}
             </button>
-
-            {/* Mic button */}
+            {/* Mic */}
             <button
               onClick={voice.toggle}
               disabled={!voice.isSupported || isProcessing}
-              title={
-                !voice.isSupported ? "Speech not supported in this browser" :
-                  isActive ? "Stop listening" : "Start voice input"
-              }
+              title={!voice.isSupported ? "Speech not supported" : isActive ? "Stop listening" : "Start voice input"}
               style={{
                 width: 30, height: 30, borderRadius: 7, flexShrink: 0,
-                background: isActive
-                  ? "rgba(0,212,232,0.18)"
-                  : "rgba(0,212,232,0.06)",
+                background: isActive ? "rgba(0,212,232,0.18)" : "rgba(0,212,232,0.06)",
                 border: `1.5px solid ${isActive ? "rgba(0,212,232,0.7)" : "#1A2033"}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: !voice.isSupported || isProcessing ? "not-allowed" : "pointer",
@@ -868,12 +806,7 @@ export function VoicePanel({
               )}
             </button>
           </div>
-
-          {/* Hint */}
-          <div style={{
-            display: "flex", justifyContent: "space-between",
-            marginTop: 5, padding: "0 2px",
-          }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, padding: "0 2px" }}>
             <span style={{ fontSize: "0.58rem", color: "#1A2033", fontFamily: "'JetBrains Mono', monospace" }}>
               Enter to send · Shift+Enter new line
             </span>

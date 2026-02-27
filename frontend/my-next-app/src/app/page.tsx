@@ -218,6 +218,18 @@ const GlobalStyles = (): React.ReactElement => (
       70% { box-shadow: 0 0 0 12px rgba(0,229,160,0); }
       100% { box-shadow: 0 0 0 0 rgba(0,229,160,0); }
     }
+    @keyframes globeRotate {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    @keyframes globeRotateY {
+      from { transform: rotateY(0deg); }
+      to   { transform: rotateY(360deg); }
+    }
+    @keyframes globePulseGlow {
+      0%,100% { transform: translate(-50%,-50%) scale(1);   opacity: 0.45; filter: blur(40px); }
+      50%      { transform: translate(-50%,-50%) scale(1.15); opacity: 0.75; filter: blur(60px); }
+    }
 
     .animate-fade-up { animation: fadeUp 0.7s ease forwards; }
     .animate-fade-in { animation: fadeIn 0.7s ease forwards; }
@@ -727,134 +739,166 @@ const HeroDemoBlock = (): React.ReactElement => {
 };
 
 /* ============================================================
-   HERO
+   GLOBE HERO
    ============================================================ */
-const Hero = (): React.ReactElement => {
-  const stats: StatItem[] = [
-    { val: "3×",  label: "faster coding"  },
-    { val: "40+", label: "voice commands" },
-    { val: "12",  label: "languages"      },
-  ];
-
-  return (
-    <section
-      style={{
-        minHeight: "100vh",
-        display: "flex", alignItems: "center",
-        padding: "100px 40px 80px",
-        position: "relative", overflow: "hidden",
-      }}
-      className="noise"
-    >
-      <GradientOrbs />
-      <ScanLine />
-      <div className="grid-bg" style={{ position: "absolute", inset: 0, zIndex: 0 }} />
-
+const GlobeHero = (): React.ReactElement => (
+  <section style={{
+    position: "relative", minHeight: "100vh",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
+    background: "radial-gradient(ellipse 80% 60% at 50% 40%, rgba(19,91,236,0.18) 0%, rgba(0,212,232,0.08) 40%, transparent 70%), #07090E",
+  }}>
+    {/* Globe PNG backdrop — outer div centers, inner div rotates */}
+    <div style={{
+      position: "absolute",
+      top: "50%", left: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "min(110vw, 1100px)",
+      height: "min(110vw, 1100px)",
+      pointerEvents: "none",
+      zIndex: 1,
+      maskImage: "radial-gradient(ellipse 48% 48% at 50% 50%, black 35%, transparent 68%)",
+      WebkitMaskImage: "radial-gradient(ellipse 48% 48% at 50% 50%, black 35%, transparent 68%)",
+    }}>
       <div style={{
-        maxWidth: 1200, margin: "0 auto", width: "100%",
-        display: "flex", alignItems: "center", gap: 80,
-        position: "relative", zIndex: 2,
+        width: "100%", height: "100%",
+        animation: "globeRotate 30s linear infinite",
       }}>
-        {/* Left */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Badge */}
-          <div
-            className="animate-fade-up"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              background: "rgba(0,212,232,0.08)",
-              border: "1px solid rgba(0,212,232,0.2)",
-              borderRadius: 100, padding: "6px 16px",
-              marginBottom: 28,
-              animationDelay: "0.1s", opacity: 0, animationFillMode: "forwards",
-            }}
-          >
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#00E5A0", boxShadow: "0 0 8px #00E5A0" }} />
-            <span style={{ color: "#4DD9E8", fontSize: "0.78rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>
-              Now in public beta · Hackathon Edition
-            </span>
-          </div>
-
-          {/* Headline */}
-          <h1
-            className="font-display animate-fade-up"
-            style={{
-              fontSize: "clamp(2.8rem, 5vw, 4.2rem)", fontWeight: 800,
-              letterSpacing: "-0.04em", lineHeight: 1.05,
-              color: "#EEF4FF", marginBottom: 24,
-              animationDelay: "0.25s", opacity: 0, animationFillMode: "forwards",
-            }}
-          >
-            Code with your{" "}
-            <span className="gradient-text">voice.</span>
-            <br />
-            Ship at the{" "}
-            <span className="shimmer-text">speed of thought.</span>
-          </h1>
-
-          {/* Subheadline */}
-          <p
-            className="animate-fade-up"
-            style={{
-              fontSize: "1.1rem", color: "#5A6888", lineHeight: 1.65,
-              maxWidth: 480, marginBottom: 40,
-              animationDelay: "0.4s", opacity: 0, animationFillMode: "forwards",
-            }}
-          >
-            A browser-based IDE where your voice commands become code in real time.
-            Powered by LLMs, built for the future of development.
-          </p>
-
-          {/* CTAs */}
-          <div
-            className="animate-fade-up"
-            style={{
-              display: "flex", gap: 16, flexWrap: "wrap",
-              animationDelay: "0.55s", opacity: 0, animationFillMode: "forwards",
-            }}
-          >
-            <button className="btn-primary" style={{ fontSize: "0.95rem", padding: "15px 36px" }}>
-              Launch IDE — Free
-            </button>
-            <button className="btn-secondary" style={{ fontSize: "0.95rem", display: "flex", alignItems: "center", gap: 8 }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M6.5 5.5 L10.5 8 L6.5 10.5 V5.5Z" fill="currentColor" />
-              </svg>
-              Watch demo
-            </button>
-          </div>
-
-          {/* Stats */}
-          <div
-            className="animate-fade-up"
-            style={{
-              display: "flex", gap: 32, marginTop: 48,
-              animationDelay: "0.7s", opacity: 0, animationFillMode: "forwards",
-            }}
-          >
-            {stats.map((stat) => (
-              <div key={stat.label}>
-                <div className="font-display" style={{ fontSize: "1.6rem", fontWeight: 700, color: "#00D4E8", letterSpacing: "-0.03em" }}>
-                  {stat.val}
-                </div>
-                <div style={{ fontSize: "0.78rem", color: "#3A4560", marginTop: 2 }}>{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Demo */}
-        <div
-          className="animate-fade-up"
-          style={{ flex: "0 0 auto", animationDelay: "0.45s", opacity: 0, animationFillMode: "forwards" }}
-        >
-          <HeroDemoBlock />
-        </div>
+        <img
+          src="/globe.png"
+          alt="Globe"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            mixBlendMode: "screen",
+            opacity: 0.95,
+            display: "block",
+          }}
+        />
       </div>
-    </section>
-  );
-};
+    </div>
+
+    {/* Foreground text — centred over the globe */}
+    <div style={{
+      position: "relative", zIndex: 10,
+      maxWidth: 860, width: "100%",
+      textAlign: "center",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 24,
+      padding: "0 24px",
+    }}>
+      {/* Badge */}
+      <div
+        className="animate-fade-up"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          background: "rgba(0,212,232,0.10)",
+          border: "1px solid rgba(0,212,232,0.28)",
+          borderRadius: 100, padding: "6px 18px",
+          animationDelay: "0.1s", opacity: 0, animationFillMode: "forwards",
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M6.5 1 L8 5h4L9 7.5l1.2 4L6.5 9.2 3.3 11.5 4.5 7.5 1 5h4z" fill="#00D4E8" />
+        </svg>
+        <span style={{ color: "#4DD9E8", fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+          Next Generation Infrastructure
+        </span>
+      </div>
+
+      {/* Headline */}
+      <h1
+        className="font-display animate-fade-up"
+        style={{
+          fontSize: "clamp(2rem, 4vw, 3.2rem)", fontWeight: 800,
+          letterSpacing: "-0.04em", lineHeight: 1.1,
+          color: "#EEF4FF", margin: 0,
+          animationDelay: "0.22s", opacity: 0, animationFillMode: "forwards",
+          textShadow: "0 0 80px rgba(0,212,232,0.18)",
+        }}
+      >
+        Code with your{" "}
+        <span style={{
+          background: "linear-gradient(90deg, #135bec 0%, #00D4E8 45%, #8b5cf6 100%)",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+        }}>voice.</span>
+        <br />
+        <span className="shimmer-text">Ship at the speed of thought.</span>
+      </h1>
+
+      {/* Sub */}
+      <p
+        className="animate-fade-up"
+        style={{
+          fontSize: "clamp(1rem, 2vw, 1.2rem)", color: "rgba(200,213,232,0.7)",
+          lineHeight: 1.65, maxWidth: 560, margin: 0,
+          animationDelay: "0.38s", opacity: 0, animationFillMode: "forwards",
+        }}
+      >
+        A browser-based IDE where your voice commands become code in real time.
+        Powered by LLMs, built for the future of development.
+      </p>
+
+      {/* CTAs */}
+      <div
+        className="animate-fade-up"
+        style={{
+          display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "center",
+          animationDelay: "0.52s", opacity: 0, animationFillMode: "forwards",
+          marginTop: 8,
+        }}
+      >
+        <button className="btn-primary" style={{ fontSize: "1rem", padding: "15px 36px", borderRadius: 12 }}>
+          Launch IDE — Free →
+        </button>
+        <button className="btn-secondary" style={{
+          fontSize: "1rem", padding: "14px 36px", borderRadius: 12,
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M6.5 5.5 L10.5 8 L6.5 10.5 V5.5Z" fill="currentColor" />
+          </svg>
+          View Demo
+        </button>
+      </div>
+    </div>
+  </section>
+);
+
+/* ============================================================
+   TERMINAL SECTION  (appears on scroll, after the globe)
+   ============================================================ */
+const TerminalSection = (): React.ReactElement => (
+  <section style={{
+    padding: "100px 40px",
+    background: "#07090E",
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 48,
+    borderTop: "1px solid #111824",
+  }}>
+    {/* Section label */}
+    <div style={{ textAlign: "center" }}>
+      <span className="font-mono" style={{ color: "#00D4E8", fontSize: "0.78rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        live demo
+      </span>
+      <h2
+        className="font-display"
+        style={{
+          fontSize: "clamp(1.8rem, 3vw, 2.6rem)", fontWeight: 700,
+          color: "#EEF4FF", letterSpacing: "-0.03em", marginTop: 12,
+        }}
+      >
+        Watch it work in real time
+      </h2>
+      <p style={{ color: "#5A6888", marginTop: 12, fontSize: "0.95rem", maxWidth: 480, margin: "12px auto 0" }}>
+        Speak a command. See the AI write and refactor your code instantly.
+      </p>
+    </div>
+
+    {/* The dynamic terminal demo block */}
+    <HeroDemoBlock />
+  </section>
+);
 
 /* ============================================================
    SOCIAL PROOF BAR
@@ -1274,7 +1318,8 @@ export default function LandingPage(): React.ReactElement {
       <CustomCursor />
       <div style={{ background: "#07090E", minHeight: "100vh" }}>
         <Nav />
-        <Hero />
+        <GlobeHero />
+        <TerminalSection />
         <SocialProofBar />
         <FeatureBento />
         <HowItWorks />

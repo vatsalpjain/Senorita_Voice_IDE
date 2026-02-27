@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useVoice } from "../hooks/useVoice";
 import { useTTS } from "../hooks/useTTS";
-import { useVoiceSocket, WSResponse, WSError } from "../hooks/useVoiceSocket";
+import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
 import {
   EditorContext,
   AICommandResponse,
@@ -13,6 +13,8 @@ import {
   WSIncomingMsg,
   buildAgenticCommand,
   CodeActionData,
+  dispatchWSMessage,
+  sendVoiceCommandWithFallback,
 } from "../services/aiService";
 
 /* ============================================================
@@ -247,8 +249,10 @@ export function VoicePanel({
   const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const chatEndRef  = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatEndRef      = useRef<HTMLDivElement>(null);
+  const textareaRef     = useRef<HTMLTextAreaElement>(null);
+  const streamBubbleId  = useRef<string | null>(null);
+  const streamChunks    = useRef<string[]>([]);
 
   /* ── Auto-grow textarea ── */
   const autoGrow = () => {
@@ -305,7 +309,7 @@ export function VoicePanel({
           );
         },
 
-        onComplete: (text, action, code) => {
+        onComplete: (text: string, action: string, code: string | null) => {
           const intent = actionToIntent(action);
 
           // Finalize the streaming bubble
@@ -320,21 +324,7 @@ export function VoicePanel({
           streamBubbleId.current = null;
           streamChunks.current = [];
           setIsProcessing(false);
-
-      if (msg.type === "error") {
-        setMessages(prev => [...prev, {
-          id: `e-${Date.now()}`, role: "error",
-          text: msg.message, code: null, timestamp: new Date(),
-        }]);
-        return;
-      }
-
-      const r = msg as WSResponse;
-
-      /* Handle open_file intent — tell the editor to open the file */
-      if (r.intent === "open_file" && r.openFile && onOpenFile) {
-        onOpenFile(r.openFile);
-      }
+        },
 
         onError: (message) => {
           const errMsg: ChatMessage = {
@@ -421,7 +411,7 @@ export function VoicePanel({
   });
 
   /* ── Core command handler (voice + text share this) ── */
-  const handleCommand = useCallback((transcript: string) => {
+  const handleCommand = useCallback(async (transcript: string) => {
     const trimmed = transcript.trim();
     if (!trimmed || isProcessing) return;
 
@@ -551,19 +541,19 @@ export function VoicePanel({
             }}>AI Assistant</span>
             <span style={{
               width: 5, height: 5, borderRadius: "50%", display: "inline-block",
-              background: isActive ? "#00D4E8" : isProcessing || ws.isThinking ? "#F6C90E"
+              background: isActive ? "#00D4E8" : isProcessing ? "#F6C90E"
                 : wsConnected ? "#00E5A0" : "#FF4D6D",
               boxShadow: isActive ? "0 0 5px #00D4E8" : "none",
               transition: "background 0.3s",
             }} />
             <span style={{
               fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-              color: isActive ? "#00D4E8" : isProcessing || ws.isThinking ? "#F6C90E"
+              color: isActive ? "#00D4E8" : isProcessing ? "#F6C90E"
                 : wsConnected ? "#00E5A0" : "#FF4D6D",
               transition: "color 0.3s",
             }}>
               {isActive ? "Listening…"
-                : isProcessing || ws.isThinking ? "Thinking…"
+                : isProcessing ? "Thinking…"
                 : wsConnected ? "Connected"
                 : ws.status === "connecting" ? "Connecting…"
                 : "Offline (mock)"}
@@ -673,7 +663,7 @@ export function VoicePanel({
           )}
 
           {/* Thinking dots */}
-          {(isProcessing || ws.isThinking) && (
+          {isProcessing && (
             <div style={{
               display: "flex", alignItems: "flex-start", padding: "4px 12px",
               animation: "vpSlideIn 0.2s ease forwards",
@@ -762,7 +752,7 @@ export function VoicePanel({
                 transition: "all 0.18s",
               }}
             >
-              {isProcessing || ws.isThinking ? (
+              {isProcessing ? (
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: "vpSpin 0.8s linear infinite" }}>
                   <circle cx="7" cy="7" r="5.5" stroke="#00D4E8" strokeWidth="1.8" strokeDasharray="20 16" />
                 </svg>

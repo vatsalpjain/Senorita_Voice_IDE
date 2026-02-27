@@ -14,7 +14,7 @@ import {
   readDirectory,
   readFileContent,
 } from "../../services/fileSystemService";
-import { registerFile, unregisterFile, registerFilesBatch, clearFileRegistry } from "../../services/fileRegistryService";
+import { registerFile, unregisterFile, registerFilesBatch, clearFileRegistry, getFileFromRegistry } from "../../services/fileRegistryService";
 
 // Dynamic import Monaco to avoid SSR issues
 const MonacoEditor = dynamic(() => import("../../components/MonacoEditor"), {
@@ -45,12 +45,23 @@ interface FileNode {
   handle?: any;
 }
 
+interface PendingFileEdit {
+  action: "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines";
+  code: string;
+  insert_at_line?: number;
+  start_line?: number;
+  end_line?: number;
+  explanation?: string;
+  file_path: string;  // The target file path
+}
+
 interface Tab {
   id: string;
   name: string;
   language: string;
   content: string;
   isDirty: boolean;
+  pendingEdit?: PendingFileEdit | null;  // Pending edit for this specific file
 }
 
 interface BootPhase {
@@ -1456,6 +1467,64 @@ export default function EditorPage(): React.ReactElement {
     };
   }, []);
 
+  /* ---- Auto-open files when they are referenced ---- */
+  useEffect(() => {
+    const handleOpenFiles = async (e: Event) => {
+      const customEvent = e as CustomEvent<{ files: Array<{ filename: string; path: string }> }>;
+      const filesToOpen = customEvent.detail?.files || [];
+      
+      for (const file of filesToOpen) {
+        if (!file.filename && !file.path) continue;
+        
+        const filename = file.filename || file.path.split(/[/\\]/).pop() || "";
+        console.log(`[EditorPage] Attempting to open: ${filename} (path: ${file.path})`);
+        
+        // Check if already open by name or path
+        const existingTab = tabs.find(t => 
+          t.name === filename || 
+          t.id === file.path ||
+          t.name.toLowerCase() === filename.toLowerCase() ||
+          file.path.toLowerCase().includes(t.name.toLowerCase())
+        );
+        
+        if (existingTab) {
+          console.log(`[EditorPage] File already open: ${existingTab.name}`);
+          setActiveTabId(existingTab.id);
+          continue;
+        }
+        
+        // Try to fetch from registry - try path first, then filename
+        let registryFile = await getFileFromRegistry(file.path);
+        if (!registryFile && filename) {
+          console.log(`[EditorPage] Path lookup failed, trying filename: ${filename}`);
+          registryFile = await getFileFromRegistry(filename);
+        }
+        
+        if (registryFile && registryFile.content) {
+          const newTab: Tab = {
+            id: registryFile.path || file.path,
+            name: registryFile.filename || filename,
+            language: getLanguage(registryFile.filename || filename),
+            content: registryFile.content,
+            isDirty: false,
+          };
+          setTabs(prev => {
+            // Double-check not already added
+            if (prev.some(t => t.name === newTab.name)) return prev;
+            return [...prev, newTab];
+          });
+          setActiveTabId(newTab.id);
+          console.log(`[EditorPage] Auto-opened ${newTab.name} (${registryFile.content.length} chars)`);
+        } else {
+          console.warn(`[EditorPage] Could not find file in registry: ${filename}`);
+        }
+      }
+    };
+    
+    window.addEventListener("senorita:open-files", handleOpenFiles);
+    return () => window.removeEventListener("senorita:open-files", handleOpenFiles);
+  }, [tabs]);
+
   /* ---- Build editor context for VoicePanel ---- */
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const editorContext: EditorContext = {
@@ -1842,9 +1911,57 @@ export default function EditorPage(): React.ReactElement {
                   onTranscriptChange={setLastTranscript}
                   onSummarize={handleSummarize}
                   onCodeAction={(action) => {
-                    // Convert CodeActionData (multi-file) to CodeAction format for Monaco
-                    // Use first edit for now (single-file support in this view)
+                    // Handle multi-file edits - apply pending edit to each target file
                     if (action.edits && action.edits.length > 0) {
+                      action.edits.forEach((edit) => {
+                        const targetPath = edit.file_path;
+                        const pendingEdit: PendingFileEdit = {
+                          action: edit.action,
+                          code: edit.code,
+                          insert_at_line: edit.insert_at_line,
+                          start_line: edit.start_line,
+                          end_line: edit.end_line,
+                          explanation: action.explanation,
+                          file_path: targetPath,
+                        };
+                        
+                        // Find existing tab by matching file path/name
+                        const existingTab = tabs.find(t => 
+                          t.id === targetPath || 
+                          t.name === targetPath.split('/').pop() ||
+                          targetPath.includes(t.name)
+                        );
+                        
+                        if (existingTab) {
+                          // Update existing tab with pending edit
+                          setTabs(prev => prev.map(tab => 
+                            tab.id === existingTab.id 
+                              ? { ...tab, pendingEdit } 
+                              : tab
+                          ));
+                          setActiveTabId(existingTab.id);
+                        } else {
+                          // File not open - fetch from registry
+                          const fileName = targetPath.split('/').pop() || targetPath;
+                          getFileFromRegistry(targetPath).then((registryFile) => {
+                            const fileContent = registryFile 
+                              ? registryFile.content 
+                              : `// File: ${targetPath}\n// Not found in registry.`;
+                            const newTab: Tab = {
+                              id: targetPath,
+                              name: fileName,
+                              language: getLanguage(fileName),
+                              content: fileContent,
+                              isDirty: false,
+                              pendingEdit,
+                            };
+                            setTabs(prev => [...prev, newTab]);
+                            setActiveTabId(targetPath);
+                          });
+                        }
+                      });
+                      
+                      // Also set the legacy pendingAction for the first edit
                       const firstEdit = action.edits[0];
                       setPendingAction({
                         action: firstEdit.action,

@@ -487,10 +487,14 @@ def detect_files_in_transcript(transcript: str, project_root: str | None = None)
     file_patterns.extend([m.lower() for m in direct_matches])
     
     # Also extract individual words that might be file names (without extension)
-    words = re.findall(r'\b([a-zA-Z][a-zA-Z0-9]*)\b', transcript)
+    words = re.findall(r'\b([a-zA-Z][a-zA-Z0-9_]*)\b', transcript)
     for word in words:
         if len(word) > 3:  # Skip short words
             file_patterns.append(word.lower())
+            # Also add with/without underscores and 's' suffix variations
+            file_patterns.append(word.lower().replace("_", ""))
+            if not word.endswith("s"):
+                file_patterns.append(word.lower() + "s")  # code_action -> code_actions
     
     if not file_patterns:
         return []
@@ -522,6 +526,18 @@ def detect_files_in_transcript(transcript: str, project_root: str | None = None)
             
             # Fuzzy match: pattern is substring of filename or vice versa
             if pattern_normalized in filename_normalized or filename_normalized in pattern_normalized:
+                seen_paths.add(reg_file.path)
+                matched_files.append({
+                    "filename": reg_file.filename,
+                    "path": reg_file.path,
+                    "content": reg_file.content[:8000] if len(reg_file.content) > 8000 else reg_file.content,
+                })
+                continue
+            
+            # Also check filename without extension
+            filename_no_ext = filename_lower.rsplit(".", 1)[0] if "." in filename_lower else filename_lower
+            filename_no_ext_normalized = _normalize_for_matching(filename_no_ext)
+            if pattern_normalized == filename_no_ext_normalized or pattern_normalized in filename_no_ext_normalized:
                 seen_paths.add(reg_file.path)
                 matched_files.append({
                     "filename": reg_file.filename,

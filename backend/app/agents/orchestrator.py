@@ -304,8 +304,22 @@ Be clear, concise, and conversational. Aim for 3-5 sentences.""",
             max_tokens=1024,
         )
         
+        # Include referenced files so frontend can open them
+        files_to_open = []
+        for ref_file in referenced_files[:3]:
+            files_to_open.append({
+                "filename": ref_file.get("filename", ""),
+                "path": ref_file.get("path", ""),
+            })
+        
         return {
-            "result": {"type": "explanation", "data": {"text": explanation}},
+            "result": {
+                "type": "explanation", 
+                "data": {
+                    "text": explanation,
+                    "files_to_open": files_to_open,  # Frontend should open these
+                }
+            },
             "response_text": explanation,
         }
     except Exception as e:
@@ -382,8 +396,22 @@ Keep responses concise — this will be spoken aloud. Aim for 2-4 sentences unle
             max_tokens=800,
         )
         
+        # Include referenced files so frontend can open them
+        files_to_open = []
+        for ref_file in referenced_files[:3]:
+            files_to_open.append({
+                "filename": ref_file.get("filename", ""),
+                "path": ref_file.get("path", ""),
+            })
+        
         return {
-            "result": {"type": "chat", "data": {"text": response}},
+            "result": {
+                "type": "chat", 
+                "data": {
+                    "text": response,
+                    "files_to_open": files_to_open,
+                }
+            },
             "response_text": response,
         }
     except Exception as e:

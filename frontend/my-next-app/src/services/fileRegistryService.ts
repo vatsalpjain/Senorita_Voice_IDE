@@ -142,6 +142,63 @@ export async function clearFileRegistry(): Promise<{ ok: boolean }> {
 }
 
 /**
+ * Search for files by name (fuzzy matching).
+ */
+export async function searchFiles(query: string): Promise<Array<{ filename: string; path: string; language: string; content: string }>> {
+  try {
+    const response = await fetch(`${API_BASE}/api/files/search?q=${encodeURIComponent(query)}`);
+    
+    if (!response.ok) {
+      return [];
+    }
+    
+    const data = await response.json();
+    return data.files || [];
+  } catch (error) {
+    console.error("[FileRegistry] Error searching files:", error);
+    return [];
+  }
+}
+
+/**
+ * List all registered files (without content).
+ */
+export async function listAllFiles(): Promise<Array<{ filename: string; path: string; language: string; size: number }>> {
+  try {
+    const response = await fetch(`${API_BASE}/api/files/list`);
+    
+    if (!response.ok) {
+      return [];
+    }
+    
+    const data = await response.json();
+    return data.files || [];
+  } catch (error) {
+    console.error("[FileRegistry] Error listing files:", error);
+    return [];
+  }
+}
+
+/**
+ * Get a specific file's content from the registry by path.
+ */
+export async function getFileFromRegistry(path: string): Promise<{ filename: string; path: string; content: string; language: string } | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/files/get?path=${encodeURIComponent(path)}`);
+    
+    if (!response.ok) {
+      return null;
+    }
+    
+    const data = await response.json();
+    return data.file || null;
+  } catch (error) {
+    console.error("[FileRegistry] Error getting file:", error);
+    return null;
+  }
+}
+
+/**
  * Register multiple files in batch.
  * More efficient than calling registerFile() multiple times.
  */

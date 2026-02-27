@@ -145,6 +145,7 @@ export interface WorkflowResultData {
 
 export interface ExplanationData {
   text: string;
+  files_to_open?: Array<{ filename: string; path: string }>;
 }
 
 export type WSIncomingMsg =
@@ -167,7 +168,7 @@ export interface StreamCallbacks {
   onCodeAction?:   (data: CodeActionData) => void;
   onDebugResult?:  (data: DebugResultData) => void;
   onWorkflowResult?: (data: WorkflowResultData) => void;
-  onExplanation?:  (text: string) => void;
+  onExplanation?:  (data: ExplanationData) => void;
   onAgentComplete?: (intent: string, result: unknown, text: string, error: string | null) => void;
 }
 
@@ -210,7 +211,7 @@ export function dispatchWSMessage(
           break;
         case "explanation":
         case "chat":
-          callbacks.onExplanation?.((agentMsg.data as ExplanationData).text);
+          callbacks.onExplanation?.(agentMsg.data as ExplanationData);
           break;
       }
       break;

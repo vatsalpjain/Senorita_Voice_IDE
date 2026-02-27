@@ -435,7 +435,8 @@ export function VoicePanel({
           streamBubbleId.current = null;
         },
 
-        onExplanation: (text) => {
+        onExplanation: (data) => {
+          const text = data?.text || "";
           console.log("[VoicePanel] onExplanation:", text?.substring(0, 100));
           // Update streaming bubble with explanation text (don't finalize yet - wait for response_complete)
           if (streamBubbleId.current) {
@@ -446,6 +447,15 @@ export function VoicePanel({
                   : m
               )
             );
+          }
+          
+          // Auto-open referenced files if any
+          if (data?.files_to_open && data.files_to_open.length > 0) {
+            console.log("[VoicePanel] Files to open:", data.files_to_open);
+            // Dispatch event for editor to open these files
+            window.dispatchEvent(new CustomEvent("senorita:open-files", {
+              detail: { files: data.files_to_open }
+            }));
           }
         },
 

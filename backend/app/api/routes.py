@@ -270,6 +270,43 @@ async def clear_file_registry():
     return {"ok": True}
 
 
+@router.get("/files/get")
+async def get_file_by_path(path: str):
+    """Get a specific file's content by path"""
+    registry = get_file_registry()
+    
+    # Search by exact path or filename match
+    files = registry.search_by_filename(path.split("/")[-1].split("\\")[-1])
+    
+    # Try to find exact match first
+    for f in files:
+        if f.path == path or f.path.endswith(path) or path.endswith(f.path):
+            return {
+                "ok": True,
+                "file": {
+                    "filename": f.filename,
+                    "path": f.path,
+                    "content": f.content,
+                    "language": f.language,
+                }
+            }
+    
+    # If no exact match, return first partial match
+    if files:
+        f = files[0]
+        return {
+            "ok": True,
+            "file": {
+                "filename": f.filename,
+                "path": f.path,
+                "content": f.content,
+                "language": f.language,
+            }
+        }
+    
+    return {"ok": False, "file": None}
+
+
 class RegisterFilesBatchRequest(BaseModel):
     """Request to register multiple files"""
     files: List[RegisterFileRequest]
@@ -295,3 +332,61 @@ async def register_files_batch(request: RegisterFilesBatchRequest):
     
     logger.info(f"[FileRegistry] Batch registered {count} files")
     return {"ok": True, "count": count}
+
+
+@router.get("/files/list")
+async def list_all_files():
+    """
+    List all registered files with their paths.
+    Useful for debugging and for LLM to know what files exist.
+    """
+    registry = get_file_registry()
+    files = registry.get_all()
+    
+    return {
+        "ok": True,
+        "count": len(files),
+        "files": [
+            {
+                "filename": f.filename,
+                "path": f.path,
+                "language": f.language,
+                "size": len(f.content),
+            }
+            for f in files
+        ]
+    }
+
+
+@router.get("/files/search")
+async def search_files(q: str):
+    """
+    Search for files by name (fuzzy matching).
+    Returns matching files with their content.
+    """
+    registry = get_file_registry()
+    
+    # Search by filename
+    results = registry.search_by_filename(q)
+    
+    # Also search in paths for folder/directory matches
+    q_lower = q.lower().replace(" ", "").replace("_", "")
+    for f in registry.get_all():
+        path_lower = f.path.lower().replace("\\", "/")
+        if q_lower in path_lower and f not in results:
+            results.append(f)
+    
+    return {
+        "ok": True,
+        "count": len(results),
+        "files": [
+            {
+                "filename": f.filename,
+                "path": f.path,
+                "language": f.language,
+                "content": f.content[:5000] if len(f.content) > 5000 else f.content,  # Limit content size
+                "truncated": len(f.content) > 5000,
+            }
+            for f in results[:10]  # Limit to 10 results
+        ]
+    }

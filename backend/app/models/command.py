@@ -17,6 +17,7 @@ class ActionType(str, Enum):
     N8N_EMAIL     = "N8N_EMAIL"
     N8N_GITHUB    = "N8N_GITHUB"
     N8N_SLACK     = "N8N_SLACK"
+    CHAT          = "CHAT"  # Fallback for general conversational input — no code generation
 
 class CommandResult(BaseModel):
     action: ActionType

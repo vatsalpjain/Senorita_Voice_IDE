@@ -15,6 +15,39 @@ export const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/voice";
 
 /* ============================================================
+   AGENTIC COMMAND REQUEST
+   ============================================================ */
+export interface AgenticCommandRequest {
+  text: string;
+  file_path: string;
+  file_content?: string;
+  cursor_line?: number;
+  selection?: string;
+  project_root?: string;
+  error_message?: string;
+  mode?: "auto" | "coding" | "debug" | "workflow" | "explain";
+  skip_tts?: boolean;
+}
+
+/**
+ * Build an agentic_command message payload for WebSocket.
+ */
+export function buildAgenticCommand(req: AgenticCommandRequest): object {
+  return {
+    type: "agentic_command",
+    text: req.text,
+    file_path: req.file_path,
+    file_content: req.file_content ?? "",
+    cursor_line: req.cursor_line ?? 1,
+    selection: req.selection ?? "",
+    project_root: req.project_root ?? "",
+    error_message: req.error_message ?? "",
+    mode: req.mode ?? "auto",
+    skip_tts: req.skip_tts ?? true,
+  };
+}
+
+/* ============================================================
    REQUEST / RESPONSE TYPES
    ============================================================ */
 
@@ -36,8 +69,8 @@ export interface EditorContext {
   language: string;
   filename: string;
   currentCode: string;
-  selectedText?: string;
   cursorLine?: number;
+  selection?: string;
 }
 
 export interface AICommandResponse {
@@ -58,46 +91,145 @@ export interface WSCompleteMsg { type: "response_complete"; action: string; text
 export interface WSErrorMsg    { type: "error";             message: string; }
 export interface WSConnected   { type: "connected";         message: string; }
 
+// New agentic workflow messages
+export interface WSIntentMsg   { type: "intent";            intent: string; }
+export interface WSAgentResultMsg {
+  type: "agent_result";
+  result_type: "code_action" | "debug_result" | "workflow_result" | "explanation" | "chat";
+  data: CodeActionData | DebugResultData | WorkflowResultData | ExplanationData;
+}
+export interface WSAgentCompleteMsg {
+  type: "response_complete";
+  intent: string;
+  result: { type: string; data: unknown } | null;
+  text: string;
+  error: string | null;
+}
+
+// Agent result data types
+export interface CodeActionData {
+  action: "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines";
+  code: string;
+  filename?: string;
+  insert_at_line?: number;
+  start_line?: number;
+  end_line?: number;
+  explanation?: string;
+}
+
+export interface DebugResultData {
+  bugs: Array<{
+    bug_line: number;
+    bug_description: string;
+    severity: "error" | "warning" | "suggestion";
+    fix_code: string;
+    explanation: string;
+  }>;
+  summary: string;
+  has_critical: boolean;
+  suggested_action: string;
+}
+
+export interface WorkflowResultData {
+  workflow: string;
+  status: "triggered" | "not_configured" | "error";
+  message: string;
+  payload: Record<string, unknown>;
+}
+
+export interface ExplanationData {
+  text: string;
+}
+
 export type WSIncomingMsg =
   | WSActionMsg | WSChunkMsg | WSCompleteMsg
   | WSErrorMsg  | WSConnected
+  | WSIntentMsg | WSAgentResultMsg | WSAgentCompleteMsg
   | { type: string; [key: string]: unknown };
 
 /* ============================================================
    WS STREAMING CALLBACKS
    ============================================================ */
 export interface StreamCallbacks {
+  // Legacy callbacks
   onAction?:   (action: string, param: string) => void;
   onChunk?:    (chunk: string)  => void;
   onComplete?: (text: string, action: string, code: string | null) => void;
   onError?:    (message: string) => void;
+  // Agentic callbacks
+  onIntent?:       (intent: string) => void;
+  onCodeAction?:   (data: CodeActionData) => void;
+  onDebugResult?:  (data: DebugResultData) => void;
+  onWorkflowResult?: (data: WorkflowResultData) => void;
+  onExplanation?:  (text: string) => void;
+  onAgentComplete?: (intent: string, result: unknown, text: string, error: string | null) => void;
 }
 
 /**
  * Dispatch an incoming WS message to the appropriate callback.
  * Called from VoicePanel's onMessage handler.
+ * Supports both legacy and agentic message types.
  */
 export function dispatchWSMessage(
   msg: WSIncomingMsg,
   callbacks: StreamCallbacks
 ): void {
   switch (msg.type) {
+    // Legacy message types
     case "action":
       callbacks.onAction?.((msg as WSActionMsg).action, (msg as WSActionMsg).param);
       break;
     case "llm_chunk":
       callbacks.onChunk?.((msg as WSChunkMsg).text);
       break;
-    case "response_complete":
-      callbacks.onComplete?.(
-        (msg as WSCompleteMsg).text,
-        (msg as WSCompleteMsg).action,
-        (msg as WSCompleteMsg).code,
-      );
-      break;
     case "error":
       callbacks.onError?.((msg as WSErrorMsg).message);
       break;
+
+    // Agentic message types
+    case "intent":
+      callbacks.onIntent?.((msg as WSIntentMsg).intent);
+      break;
+    case "agent_result": {
+      const agentMsg = msg as WSAgentResultMsg;
+      switch (agentMsg.result_type) {
+        case "code_action":
+          callbacks.onCodeAction?.(agentMsg.data as CodeActionData);
+          break;
+        case "debug_result":
+          callbacks.onDebugResult?.(agentMsg.data as DebugResultData);
+          break;
+        case "workflow_result":
+          callbacks.onWorkflowResult?.(agentMsg.data as WorkflowResultData);
+          break;
+        case "explanation":
+        case "chat":
+          callbacks.onExplanation?.((agentMsg.data as ExplanationData).text);
+          break;
+      }
+      break;
+    }
+    case "response_complete": {
+      // Handle both legacy and agentic complete messages
+      const completeMsg = msg as WSCompleteMsg & WSAgentCompleteMsg;
+      if ("intent" in completeMsg && completeMsg.intent) {
+        // Agentic complete
+        callbacks.onAgentComplete?.(
+          completeMsg.intent,
+          completeMsg.result,
+          completeMsg.text,
+          completeMsg.error,
+        );
+      } else {
+        // Legacy complete
+        callbacks.onComplete?.(
+          completeMsg.text,
+          completeMsg.action,
+          completeMsg.code,
+        );
+      }
+      break;
+    }
   }
 }
 
@@ -192,8 +324,8 @@ async function generatedFunction() {
     insertMode: "replace",
     explanation: `Refactored the current selection based on: "${req.transcript}"`,
     code: `// Refactored by VoiceIDE
-${req.context.selectedText
-  ? req.context.selectedText
+${req.context.selection
+  ? req.context.selection
       .split("\n")
       .map((l) => l.trimEnd())
       .join("\n")
@@ -210,7 +342,7 @@ ${req.context.selectedText
     insertMode: "replace",
     explanation: `Fixed potential issues based on: "${req.transcript}"`,
     code: `// Fixed by VoiceIDE
-${req.context.selectedText ?? req.context.currentCode.slice(0, 200)}
+${req.context.selection ?? req.context.currentCode.slice(0, 200)}
 // ↑ Applied fix: added null checks and error handling`,
   }),
   test: (req) => ({

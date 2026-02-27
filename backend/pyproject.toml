@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.100.0",
     "groq>=1.0.0",
     "httpx>=0.25.0",
+    "langgraph>=1.0.9",
     "loguru>=0.7.2",
     "numpy>=1.24.0",
     "pyaudio>=0.2.14",

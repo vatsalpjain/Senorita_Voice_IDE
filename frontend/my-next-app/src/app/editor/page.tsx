@@ -1,8 +1,32 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { VoicePanel } from "../../components/VoicePanel";
-import { AICommandResponse, EditorContext } from "../../services/aiService";
+import {
+  AICommandResponse,
+  EditorContext,
+} from "../../services/aiService";
+import type { CodeAction } from "../../components/MonacoEditor";
+import {
+  openFolderPicker,
+  readDirectory,
+  readFileContent,
+} from "../../services/fileSystemService";
+
+// Dynamic import Monaco to avoid SSR issues
+const MonacoEditor = dynamic(() => import("../../components/MonacoEditor"), {
+  ssr: false,
+  loading: () => (
+    <div style={{
+      flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+      background: "#0C0F18", color: "#2A3555", fontSize: "0.8rem",
+      fontFamily: "'JetBrains Mono', monospace",
+    }}>
+      Loading Monaco Editor...
+    </div>
+  ),
+});
 
 /* ============================================================
    TYPES
@@ -15,6 +39,8 @@ interface FileNode {
   content?: string;
   children?: FileNode[];
   isOpen?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle?: any;
 }
 
 interface Tab {
@@ -763,62 +789,40 @@ const TabsBar = ({ tabs, activeTabId, onTabClick, onTabClose }: TabsBarProps): R
 );
 
 /* ============================================================
-   CODE EDITOR (virtual, Monaco-ready placeholder)
+   CODE EDITOR (Monaco-powered with agentic workflow)
    ============================================================ */
 interface CodeEditorProps {
   tab: Tab;
+  onContentChange: (content: string) => void;
+  pendingAction: CodeAction | null;
+  onAcceptAction: () => void;
+  onRejectAction: () => void;
+  onCursorChange?: (line: number) => void;
+  onSelectionChange?: (selection: string) => void;
 }
 
-const CodeEditor = ({ tab }: CodeEditorProps): React.ReactElement => {
-  const lines = highlightCode(tab.content, tab.language);
-  const [cursorLine, setCursorLine] = useState<number>(1);
-
+const CodeEditorWrapper = ({
+  tab,
+  onContentChange,
+  pendingAction,
+  onAcceptAction,
+  onRejectAction,
+  onCursorChange,
+  onSelectionChange,
+}: CodeEditorProps): React.ReactElement => {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#0C0F18" }}>
-      {/* Editor area */}
-      <div
-        style={{
-          flex: 1, overflow: "auto", padding: "12px 0",
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: "0.82rem", lineHeight: 1.6,
-          cursor: "text",
-          position: "relative",
-        }}
-        onClick={(e: React.MouseEvent<HTMLDivElement>) => {
-          const el = e.currentTarget;
-          const rect = el.getBoundingClientRect();
-          const lineH = 1.6 * 0.82 * 16;
-          const clicked = Math.floor((e.clientY - rect.top + el.scrollTop) / lineH) + 1;
-          setCursorLine(Math.min(clicked, tab.content.split("\n").length));
-        }}
-      >
-        {lines.map((line, i) => (
-          <div
-            key={i}
-            style={{
-              background: cursorLine === i + 1 ? "rgba(0,212,232,0.04)" : "transparent",
-              transition: "background 0.1s",
-            }}
-          >
-            {line}
-          </div>
-        ))}
-      </div>
-
-      {/* Monaco mount notice */}
-      <div style={{
-        padding: "6px 16px",
-        background: "#080B12",
-        borderTop: "1px solid #0F1420",
-        display: "flex", alignItems: "center", gap: 8,
-      }}>
-        <span style={{
-          fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace",
-          color: "#2A3555",
-        }}>
-          📦 Install <code style={{ color: "#4DD9E8" }}>@monaco-editor/react</code> to enable full IntelliSense, autocomplete &amp; diff view
-        </span>
-      </div>
+      <MonacoEditor
+        value={tab.content}
+        language={tab.language}
+        filename={tab.name}
+        onChange={onContentChange}
+        onCursorChange={(line) => onCursorChange?.(line)}
+        onSelectionChange={(sel) => onSelectionChange?.(sel)}
+        pendingAction={pendingAction}
+        onAcceptAction={onAcceptAction}
+        onRejectAction={onRejectAction}
+      />
     </div>
   );
 };
@@ -984,9 +988,12 @@ interface SidebarPanelProps {
   activeFileId: string;
   sidebarWidth: number;
   onResize: (e: React.MouseEvent) => void;
+  onOpenFolder?: () => void;
+  folderName?: string;
+  isLoading?: boolean;
 }
 
-const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sidebarWidth, onResize }: SidebarPanelProps): React.ReactElement => (
+const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sidebarWidth, onResize, onOpenFolder, folderName, isLoading }: SidebarPanelProps): React.ReactElement => (
   <div style={{
     width: sidebarWidth, background: "#0C0F18",
     borderRight: "1px solid #1A2033",
@@ -1007,9 +1014,55 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
 
     {/* File tree */}
     <div style={{ flex: 1, overflow: "auto", paddingTop: 4 }}>
-      {activePanel === "explorer" && fileTree.map((node) => (
-        <FileTreeNode key={node.id} node={node} depth={0} onFileClick={onFileClick} activeFileId={activeFileId} />
-      ))}
+      {activePanel === "explorer" && fileTree.length === 0 && !isLoading && (
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <div style={{ color: "#2A3555", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
+            No folder open
+          </div>
+          <button
+            onClick={onOpenFolder}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "rgba(0,212,232,0.1)", border: "1px solid rgba(0,212,232,0.3)",
+              borderRadius: 6, padding: "8px 16px",
+              color: "#00D4E8", cursor: "pointer",
+              fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif",
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = "rgba(0,212,232,0.2)";
+              e.currentTarget.style.borderColor = "rgba(0,212,232,0.5)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = "rgba(0,212,232,0.1)";
+              e.currentTarget.style.borderColor = "rgba(0,212,232,0.3)";
+            }}
+          >
+            <span>📁</span>
+            <span>Open Folder</span>
+          </button>
+          <div style={{ color: "#1A2033", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace", textAlign: "center", marginTop: 8 }}>
+            or drag & drop a folder
+          </div>
+        </div>
+      )}
+      {activePanel === "explorer" && isLoading && (
+        <div style={{ padding: 16, color: "#00D4E8", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
+          Loading folder...
+        </div>
+      )}
+      {activePanel === "explorer" && fileTree.length > 0 && (
+        <>
+          {folderName && (
+            <div style={{ padding: "4px 12px", fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", borderBottom: "1px solid #1A2033", marginBottom: 4 }}>
+              📁 {folderName}
+            </div>
+          )}
+          {fileTree.map((node) => (
+            <FileTreeNode key={node.id} node={node} depth={0} onFileClick={onFileClick} activeFileId={activeFileId} />
+          ))}
+        </>
+      )}
       {activePanel === "search" && (
         <div style={{ padding: 12 }}>
           <input
@@ -1261,7 +1314,16 @@ export default function EditorPage(): React.ReactElement {
   const [activeFileId, setActiveFileId] = useState<string>("");
   const [sidebarWidth, setSidebarWidth] = useState<number>(220);
   const [showMarkdown, setShowMarkdown] = useState<boolean>(false);
-  const [cursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
+  const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
+  const [selection, setSelection] = useState<string>("");
+  const [pendingAction, setPendingAction] = useState<CodeAction | null>(null);
+
+  /* ---- File system state ---- */
+  const [fileTree, setFileTree] = useState<FileNode[]>([]); // Empty = no folder open
+  const [folderName, setFolderName] = useState<string>("");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [rootHandle, setRootHandle] = useState<any>(null);
+  const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
 
   /* ---- Voice panel state (right-side panel) ---- */
   const [voiceOpen, setVoiceOpen]           = useState<boolean>(false);
@@ -1351,10 +1413,13 @@ export default function EditorPage(): React.ReactElement {
     language: activeTab?.language ?? "plaintext",
     filename: activeTab?.name ?? "untitled",
     currentCode: activeTab?.content ?? "",
+    cursorLine: cursorPos.line,
+    selection: selection,
   };
 
-  // Open default file after boot
-  const handleFileOpen = useCallback((node: FileNode): void => {
+  // Open file - reads content from handle if available
+  const handleFileOpen = useCallback(async (node: FileNode): Promise<void> => {
+    console.log("[handleFileOpen] Opening file:", node.name, "handle:", !!node.handle, "content:", node.content?.length);
     if (node.type !== "file") return;
 
     setActiveFileId(node.id);
@@ -1366,27 +1431,59 @@ export default function EditorPage(): React.ReactElement {
       return;
     }
 
+    // Read content from file handle if available (dynamic folder)
+    let content = node.content || "";
+    if (node.handle && !node.content) {
+      try {
+        console.log("[handleFileOpen] Reading content from handle...");
+        content = await readFileContent(node.handle);
+        console.log("[handleFileOpen] Read content length:", content.length);
+      } catch (err) {
+        console.error("Error reading file:", err);
+        content = "// Error reading file";
+      }
+    }
+
     const newTab: Tab = {
       id: node.id,
       name: node.name,
       language: node.language || getLanguage(node.name),
-      content: node.content || "",
+      content,
       isDirty: false,
     };
 
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(node.id);
-
-    // Always start with markdown preview closed; user opens it via "Preview MD" button
     setShowMarkdown(false);
-  }, [tabs, setActiveFileId, setActiveTabId, setTabs, setShowMarkdown]);
+  }, [tabs]);
 
+  // Boot complete handler
   const handleBootComplete = useCallback((): void => {
     setBooting(false);
-    // Auto-open README
-    const readme = collectFiles(VIRTUAL_FS).find((f) => f.name === "README.md");
-    if (readme) handleFileOpen(readme);
-  }, [handleFileOpen]);
+  }, []);
+
+  // Handle opening a folder from the file system
+  const handleOpenFolder = useCallback(async (): Promise<void> => {
+    setIsLoadingFolder(true);
+    try {
+      const handle = await openFolderPicker();
+      if (!handle) {
+        setIsLoadingFolder(false);
+        return;
+      }
+      
+      setRootHandle(handle);
+      setFolderName(handle.name);
+      
+      // Read the directory tree
+      const tree = await readDirectory(handle);
+      setFileTree(tree as unknown as FileNode[]);
+    } catch (err) {
+      console.error("Error opening folder:", err);
+    } finally {
+      setIsLoadingFolder(false);
+    }
+  }, []);
 
   const handleTabClose = (id: string): void => {
     setTabs((prev) => {
@@ -1404,7 +1501,52 @@ export default function EditorPage(): React.ReactElement {
     });
   };
 
-  // Removed unused handleContentChange function
+  // Handle content changes from Monaco editor
+  const handleContentChange = useCallback((content: string): void => {
+    setTabs(prev => prev.map(tab => {
+      if (tab.id !== activeTabId) return tab;
+      return { ...tab, content, isDirty: true };
+    }));
+  }, [activeTabId]);
+
+  // Handle accepting pending code action
+  const handleAcceptAction = useCallback((): void => {
+    if (!pendingAction || !activeTab) return;
+    
+    let newContent = activeTab.content;
+    switch (pendingAction.action) {
+      case "insert": {
+        const line = pendingAction.insert_at_line || cursorPos.line;
+        const lines = activeTab.content.split("\n");
+        lines.splice(line - 1, 0, pendingAction.code);
+        newContent = lines.join("\n");
+        break;
+      }
+      case "replace_selection":
+      case "replace_file":
+        newContent = pendingAction.code;
+        break;
+      case "delete_lines": {
+        const start = pendingAction.start_line || 1;
+        const end = pendingAction.end_line || start;
+        const lines = activeTab.content.split("\n");
+        lines.splice(start - 1, end - start + 1);
+        newContent = lines.join("\n");
+        break;
+      }
+    }
+    
+    setTabs(prev => prev.map(tab => {
+      if (tab.id !== activeTabId) return tab;
+      return { ...tab, content: newContent, isDirty: true };
+    }));
+    setPendingAction(null);
+  }, [pendingAction, activeTab, activeTabId, cursorPos.line]);
+
+  // Handle rejecting pending code action
+  const handleRejectAction = useCallback((): void => {
+    setPendingAction(null);
+  }, []);
 
   // Sidebar resize
   const handleResizeStart = (e: React.MouseEvent): void => {
@@ -1459,11 +1601,14 @@ export default function EditorPage(): React.ReactElement {
           {/* Sidebar */}
           <SidebarPanel
             activePanel={activePanel}
-            fileTree={VIRTUAL_FS}
+            fileTree={fileTree}
             onFileClick={handleFileOpen}
             activeFileId={activeFileId}
             sidebarWidth={sidebarWidth}
             onResize={handleResizeStart}
+            onOpenFolder={handleOpenFolder}
+            folderName={folderName}
+            isLoading={isLoadingFolder}
           />
 
           {/* ── Center: Editor column ── */}
@@ -1515,7 +1660,15 @@ export default function EditorPage(): React.ReactElement {
               {/* Code editor */}
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
                 {activeTab ? (
-                  <CodeEditor tab={activeTab} />
+                  <CodeEditorWrapper
+                    tab={activeTab}
+                    onContentChange={handleContentChange}
+                    pendingAction={pendingAction}
+                    onAcceptAction={handleAcceptAction}
+                    onRejectAction={handleRejectAction}
+                    onCursorChange={(line) => setCursorPos(prev => ({ ...prev, line }))}
+                    onSelectionChange={setSelection}
+                  />
                 ) : (
                   <EmptyState />
                 )}
@@ -1579,6 +1732,17 @@ export default function EditorPage(): React.ReactElement {
                   editorContext={editorContext}
                   onAIResponse={handleAIResponse}
                   onTranscriptChange={setLastTranscript}
+                  onCodeAction={(action) => {
+                    // Convert CodeActionData to CodeAction format for Monaco
+                    setPendingAction({
+                      action: action.action,
+                      code: action.code,
+                      insert_at_line: action.insert_at_line,
+                      start_line: action.start_line,
+                      end_line: action.end_line,
+                      explanation: action.explanation,
+                    });
+                  }}
                 />
               </div>
             </div>

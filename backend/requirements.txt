@@ -26,6 +26,9 @@ pydantic-settings>=2.3.0   # required for BaseSettings in config.py
 python-dotenv>=1.0.0
 python-multipart>=0.0.9   # required for UploadFile in routes.py
 
+# LangGraph for agentic workflow
+langgraph>=0.2.0
+
 # Logging
 loguru>=0.7.2
 

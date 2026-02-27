@@ -8,11 +8,12 @@ from app.services.deepgram_tts import text_to_speech
 from app.services.code_actions import handle_action
 from app.services.n8n_service import trigger_n8n
 from app.models.command import CommandResult, ActionType
+from app.agents.orchestrator import orchestrate
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-LLM_ACTIONS = {"GENERATE_CODE", "DEBUG_MODE", "REVIEW_MODE", "EXPLAIN_CODE"}
+LLM_ACTIONS = {"GENERATE_CODE", "DEBUG_MODE", "REVIEW_MODE", "EXPLAIN_CODE", "CHAT"}
 N8N_ACTIONS = {"N8N_EMAIL", "N8N_GITHUB", "N8N_SLACK"}
 
 
@@ -62,6 +63,10 @@ async def voice_ws(websocket: WebSocket):
                     # Frontend can set skip_tts=true to handle TTS via Web Speech API
                     skip_tts   = data.get("skip_tts", False)
                     await _handle_transcript(websocket, transcript, context, skip_tts=skip_tts)
+
+                elif msg_type == "agentic_command":
+                    # New agentic workflow — uses LangGraph orchestrator
+                    await _handle_agentic_command(websocket, data)
 
                 elif msg_type == "ping":
                     await websocket.send_json({"type": "pong"})
@@ -147,4 +152,104 @@ async def _handle_transcript(
         "action": action,
         "text": response_text,
         "code": code,
+    })
+
+
+async def _handle_agentic_command(websocket: WebSocket, data: dict):
+    """
+    Handles agentic commands via LangGraph orchestrator.
+    Routes to Context → Intent Detection → Coding/Debug/Workflow/Explain agents.
+    
+    Expected data format:
+    {
+        "type": "agentic_command",
+        "text": "create a function to sort a list",
+        "file_path": "/path/to/file.py",
+        "cursor_line": 10,
+        "selection": "selected code if any",
+        "project_root": "/path/to/project",
+        "error_message": "optional error from terminal",
+        "mode": "auto" | "coding" | "debug" | "workflow" | "explain",
+        "skip_tts": true | false
+    }
+    
+    Events sent:
+      1. intent          — detected intent type
+      2. agent_result    — structured result from the agent
+      3. tts_start/done  — if skip_tts=False
+      4. response_complete — final response with all data
+    """
+    transcript = data.get("text", "")
+    file_path = data.get("file_path", "")
+    file_content = data.get("file_content", "")
+    cursor_line = data.get("cursor_line", 1)
+    selection = data.get("selection", "")
+    project_root = data.get("project_root", "")
+    error_message = data.get("error_message", "")
+    mode = data.get("mode", "auto")
+    skip_tts = data.get("skip_tts", False)
+    
+    # Validate required fields
+    if not transcript:
+        await websocket.send_json({"type": "error", "message": "No text provided"})
+        return
+    
+    # file_path is optional now - we can work with just file_content
+    if not file_path and not file_content:
+        await websocket.send_json({"type": "error", "message": "No file_path or file_content provided"})
+        return
+    
+    # Run the orchestrator
+    try:
+        result = await orchestrate(
+            transcript=transcript,
+            file_path=file_path,
+            file_content=file_content,
+            cursor_line=cursor_line,
+            selection=selection,
+            project_root=project_root,
+            error_message=error_message,
+            mode=mode,
+        )
+    except Exception as e:
+        logger.error(f"Orchestrator error: {e}")
+        await websocket.send_json({"type": "error", "message": f"Orchestrator failed: {e}"})
+        return
+    
+    # Send intent detection result
+    intent = result.get("intent", "chat")
+    logger.info(f"Sending intent: {intent}")
+    await websocket.send_json({"type": "intent", "intent": intent})
+    
+    # Send agent result
+    agent_result = result.get("result")
+    if agent_result:
+        logger.info(f"Sending agent_result: {agent_result.get('type')}")
+        await websocket.send_json({
+            "type": "agent_result",
+            "result_type": agent_result.get("type"),
+            "data": agent_result.get("data"),
+        })
+    
+    # Get response text for TTS
+    response_text = result.get("response_text", "")
+    
+    # TTS (Deepgram) — only when client does NOT handle TTS itself
+    if not skip_tts and response_text:
+        await websocket.send_json({"type": "tts_start"})
+        try:
+            audio_bytes = await text_to_speech(response_text)
+            await websocket.send_bytes(audio_bytes)
+        except Exception as e:
+            logger.error(f"TTS failed (non-fatal): {e}")
+        await websocket.send_json({"type": "tts_done"})
+    
+    # Send complete response
+    logger.info(f"Sending response_complete: intent={intent}, text_len={len(response_text)}")
+    await websocket.send_json({
+        "type": "response_complete",
+        "intent": intent,
+        "result": agent_result,
+        "text": response_text,
+        "error": result.get("error"),
     })

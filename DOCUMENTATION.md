@@ -44,15 +44,21 @@
    - 8.3 [Deepgram TTS Service — SDK v5](#83-deepgram-tts-service--sdk-v5)
    - 8.4 [Code Action Handler](#84-code-action-handler)
    - 8.5 [n8n Webhook Service](#85-n8n-webhook-service)
-9. [WebSocket Voice Pipeline](#9-websocket-voice-pipeline)
-10. [HTTP REST API Routes](#10-http-rest-api-routes)
-11. [FastAPI Main Application](#11-fastapi-main-application)
-12. [Dependencies & Installation](#12-dependencies--installation)
-13. [Running the Server](#13-running-the-server)
-14. [Frontend ↔ Backend Contract](#14-frontend--backend-contract)
-15. [WebSocket Message Protocol](#15-websocket-message-protocol)
-16. [Error Handling Strategy](#16-error-handling-strategy)
-17. [Coding Conventions](#17-coding-conventions)
+9. [Agentic Workflow (LangGraph)](#9-agentic-workflow-langgraph)
+   - 9.1 [Context Agent](#91-context-agent)
+   - 9.2 [Coding Agent](#92-coding-agent)
+   - 9.3 [Debug Agent](#93-debug-agent)
+   - 9.4 [Workflow Agent](#94-workflow-agent)
+   - 9.5 [Orchestrator](#95-orchestrator)
+10. [WebSocket Voice Pipeline](#10-websocket-voice-pipeline)
+11. [HTTP REST API Routes](#11-http-rest-api-routes)
+12. [FastAPI Main Application](#12-fastapi-main-application)
+13. [Dependencies & Installation](#13-dependencies--installation)
+14. [Running the Server](#14-running-the-server)
+15. [Frontend ↔ Backend Contract](#15-frontend--backend-contract)
+16. [WebSocket Message Protocol](#16-websocket-message-protocol)
+17. [Error Handling Strategy](#17-error-handling-strategy)
+18. [Coding Conventions](#18-coding-conventions)
 
 ---
 
@@ -758,7 +764,151 @@ async def trigger_n8n(action: str, payload: dict) -> dict:
 
 ---
 
-## 9. WEBSOCKET VOICE PIPELINE
+## 9. AGENTIC WORKFLOW (LANGGRAPH)
+
+Senorita uses a **LangGraph-based multi-agent system** for intelligent code assistance. The orchestrator routes voice commands to specialized agents.
+
+### Architecture
+
+```
+Voice Input (transcript + file context)
+            ↓
+┌─────────────────────────────────────┐
+│       Main Orchestrator             │
+│       (LangGraph State Machine)     │
+│                                     │
+│  1. Context Agent runs first        │
+│  2. Detect intent from transcript   │
+│  3. Route to appropriate agent      │
+└──────────────┬──────────────────────┘
+               │
+    ┌──────────┼──────────┬───────────┐
+    ↓          ↓          ↓           ↓
+┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+│Coding  │ │Debug   │ │Workflow│ │Explain │
+│Agent   │ │Agent   │ │Agent   │ │/Chat   │
+└────────┘ └────────┘ └────────┘ └────────┘
+    ↓          ↓          ↓           ↓
+    └──────────┴──────────┴───────────┘
+               ↓
+    { intent, result, response_text }
+```
+
+### 9.1 Context Agent
+
+**File: `backend/app/agents/context_agent.py`**
+
+Runs **before every other agent** to gather file context.
+
+```python
+async def get_context(file_path, cursor_line, selection, project_root) -> FileContext:
+    return {
+        "current_file": str,           # Full file content
+        "file_path": str,              # Absolute path
+        "language": str,               # Detected language (python, javascript, etc.)
+        "selected_code": str,          # User selection
+        "cursor_line": int,            # Cursor position
+        "surrounding_lines": str,      # ±20 lines around cursor with line numbers
+        "project_structure": str,      # File tree
+        "imports": list[str],          # Extracted imports
+        "related_files": list[str],    # Local files imported by this one
+    }
+```
+
+### 9.2 Coding Agent
+
+**File: `backend/app/agents/coding_agent.py`**
+
+Handles code generation, insertion, editing, refactoring. Returns JSON instructions for Monaco.
+
+```python
+async def coding_agent(transcript, context) -> CodeAction:
+    return {
+        "action": "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines",
+        "code": str,                   # Code to insert/replace
+        "filename": str | None,        # For create_file
+        "insert_at_line": int | None,  # For insert
+        "start_line": int | None,      # For delete_lines
+        "end_line": int | None,        # For delete_lines
+        "explanation": str,            # Brief explanation (for TTS)
+    }
+```
+
+### 9.3 Debug Agent
+
+**File: `backend/app/agents/debug_agent.py`**
+
+Analyzes errors, parses stacktraces, identifies bugs, suggests fixes.
+
+```python
+async def debug_agent(transcript, context, error_message) -> DebugResult:
+    return {
+        "bugs": [
+            {
+                "bug_line": int,           # Line number
+                "bug_description": str,
+                "severity": "error" | "warning" | "suggestion",
+                "fix_code": str,           # Corrected code
+                "explanation": str,
+            }
+        ],
+        "summary": str,
+        "has_critical": bool,
+        "suggested_action": str,
+    }
+```
+
+### 9.4 Workflow Agent
+
+**File: `backend/app/agents/workflow_agent.py`**
+
+Handles n8n triggers (email, GitHub, Slack). Currently placeholder.
+
+```python
+async def workflow_agent(transcript, context) -> WorkflowResult:
+    return {
+        "workflow": str,               # "send-summary", "create-issue", etc.
+        "status": "triggered" | "not_configured" | "error",
+        "message": str,
+        "payload": dict,
+    }
+```
+
+### 9.5 Orchestrator
+
+**File: `backend/app/agents/orchestrator.py`**
+
+LangGraph state machine that routes commands.
+
+```python
+async def orchestrate(
+    transcript: str,
+    file_path: str,
+    cursor_line: int = 1,
+    selection: str = "",
+    project_root: str = "",
+    error_message: str = "",
+    mode: str = "auto",  # "auto" | "coding" | "debug" | "workflow" | "explain"
+) -> dict:
+    return {
+        "intent": str,         # Detected intent
+        "result": dict,        # Agent-specific result
+        "response_text": str,  # For TTS
+        "error": str | None,
+    }
+```
+
+**Intent Detection Keywords:**
+| Intent | Keywords |
+|--------|----------|
+| coding | create, write, add, implement, refactor, generate, insert, delete |
+| debug | fix, debug, error, bug, why, broken, crash, exception |
+| explain | explain, what does, how does, review, understand |
+| workflow | email, notify, slack, github, remind, calendar |
+
+---
+
+## 10. WEBSOCKET VOICE PIPELINE
 
 **File: `backend/app/api/websocket.py`**
 
@@ -1071,7 +1221,9 @@ Frontend responsibilities:
 
 ---
 
-## 15. WEBSOCKET MESSAGE PROTOCOL
+## 16. WEBSOCKET MESSAGE PROTOCOL
+
+### Legacy Messages (text_command)
 
 ```jsonc
 // Server → Client
@@ -1094,9 +1246,43 @@ Frontend responsibilities:
 // ... binary audio frames ...
 ```
 
+### Agentic Messages (agentic_command) — NEW
+
+```jsonc
+// Client → Server
+{
+  "type": "agentic_command",
+  "text": "create a function to sort a list",
+  "file_path": "/path/to/file.py",      // REQUIRED
+  "cursor_line": 10,                     // 1-indexed
+  "selection": "selected code if any",
+  "project_root": "/path/to/project",
+  "error_message": "optional terminal error",
+  "mode": "auto",                        // "auto" | "coding" | "debug" | "workflow" | "explain"
+  "skip_tts": true                       // true = frontend handles TTS via Web Speech API
+}
+
+// Server → Client
+{"type": "intent",        "intent": "coding"}
+{"type": "agent_result",  "result_type": "code_action", "data": {...}}
+{"type": "tts_start"}     // only if skip_tts=false
+// ... binary audio bytes ...
+{"type": "tts_done"}
+{"type": "response_complete", "intent": "coding", "result": {...}, "text": "...", "error": null}
+```
+
+**Agent Result Types:**
+| result_type | data structure |
+|-------------|----------------|
+| `code_action` | `{action, code, filename, insert_at_line, start_line, end_line, explanation}` |
+| `debug_result` | `{bugs: [...], summary, has_critical, suggested_action}` |
+| `workflow_result` | `{workflow, status, message, payload}` |
+| `explanation` | `{text: "..."}` |
+| `chat` | `{text: "..."}` |
+
 ---
 
-## 16. ERROR HANDLING STRATEGY
+## 17. ERROR HANDLING STRATEGY
 
 | Scenario | Behavior |
 |---|---|
@@ -1111,7 +1297,7 @@ Frontend responsibilities:
 
 ---
 
-## 17. CODING CONVENTIONS
+## 18. CODING CONVENTIONS
 
 - **Always `AsyncDeepgramClient`**: Never use blocking `DeepgramClient` in async FastAPI context.
 - **SDK version check**: `deepgram-sdk>=5.3.0` — verify on install, never use v3/v4 patterns.

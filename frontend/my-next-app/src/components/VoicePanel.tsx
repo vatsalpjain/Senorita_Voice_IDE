@@ -13,6 +13,8 @@ import {
   actionToIntent,
   WS_URL,
   WSIncomingMsg,
+  buildAgenticCommand,
+  CodeActionData,
 } from "../services/aiService";
 
 /* ============================================================
@@ -22,6 +24,7 @@ export interface VoicePanelProps {
   editorContext: EditorContext;
   onAIResponse: (response: AICommandResponse) => void;
   onTranscriptChange?: (transcript: string) => void;
+  onCodeAction?: (action: CodeActionData) => void;
 }
 
 type MessageRole = "user" | "assistant" | "error";
@@ -240,6 +243,7 @@ export function VoicePanel({
   editorContext,
   onAIResponse,
   onTranscriptChange,
+  onCodeAction,
 }: VoicePanelProps): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [textInput, setTextInput] = useState("");
@@ -273,6 +277,7 @@ export function VoicePanel({
     url: WS_URL,
     autoConnect: true,
     onMessage: useCallback((msg: WSMessage) => {
+      console.log("[VoicePanel] WS message received:", msg);
       dispatchWSMessage(msg as WSIncomingMsg, {
         onAction: (action, param) => {
           // Create the streaming assistant bubble
@@ -349,8 +354,75 @@ export function VoicePanel({
           streamBubbleId.current = null;
           streamChunks.current = [];
         },
+
+        // Agentic workflow callbacks
+        onIntent: (intent) => {
+          console.log("[VoicePanel] onIntent:", intent);
+          // Create streaming bubble for agentic response
+          const bubbleId = `a-${Date.now()}`;
+          streamBubbleId.current = bubbleId;
+          const streamingMsg: ChatMessage = {
+            id: bubbleId,
+            role: "assistant",
+            text: `Processing ${intent} request...`,
+            code: null,
+            intent,
+            isStreaming: true,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, streamingMsg]);
+        },
+
+        onCodeAction: (data) => {
+          // Notify parent to show pending action in Monaco
+          onCodeAction?.(data);
+          
+          // Update the streaming bubble with code action info
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === streamBubbleId.current
+                ? { ...m, text: data.explanation || "Code generated", code: data.code, isStreaming: false }
+                : m
+            )
+          );
+          setIsProcessing(false);
+          streamBubbleId.current = null;
+        },
+
+        onExplanation: (text) => {
+          console.log("[VoicePanel] onExplanation:", text?.substring(0, 100));
+          // Update streaming bubble with explanation text (don't finalize yet - wait for response_complete)
+          if (streamBubbleId.current) {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === streamBubbleId.current
+                  ? { ...m, text: text || "Processing..." }
+                  : m
+              )
+            );
+          }
+        },
+
+        onAgentComplete: (intent, result, text) => {
+          console.log("[VoicePanel] onAgentComplete:", { intent, text: text?.substring(0, 100) });
+          // Finalize agentic response
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === streamBubbleId.current
+                ? { ...m, text: text || "Done", intent, isStreaming: false }
+                : m
+            )
+          );
+          setIsProcessing(false);
+          streamBubbleId.current = null;
+
+          // Auto-speak via Web Speech TTS
+          if (tts.autoSpeak && tts.isSupported && text) {
+            tts.speak(text);
+          }
+        },
       });
-    }, [onAIResponse, tts]),
+    }, [onAIResponse, onCodeAction, tts]),
   });
 
   /* ── Core command handler ── */
@@ -371,12 +443,28 @@ export function VoicePanel({
 
     if (ws.isConnected) {
       // ── PRIMARY: WebSocket streaming ──
-      ws.send({
-        type: "text_command",
-        text: trimmed,
-        context: editorContext.currentCode || null,
-        skip_tts: true,  // Frontend handles TTS via Web Speech API
-      });
+      // Use agentic_command when we have file context for full orchestrator workflow
+      if (editorContext.filename && editorContext.filename !== "untitled") {
+        console.log("[VoicePanel] Sending agentic_command with file_content length:", editorContext.currentCode?.length || 0);
+        const agenticCmd = buildAgenticCommand({
+          text: trimmed,
+          file_path: editorContext.filename,
+          file_content: editorContext.currentCode || "",
+          cursor_line: editorContext.cursorLine || 1,
+          selection: editorContext.selection || "",
+          project_root: "",
+          skip_tts: true,
+        });
+        ws.send(agenticCmd);
+      } else {
+        // Fallback to simple text_command when no file context
+        ws.send({
+          type: "text_command",
+          text: trimmed,
+          context: editorContext.currentCode || null,
+          skip_tts: true,
+        });
+      }
       // Response handling happens in the onMessage callbacks above
     } else {
       // ── FALLBACK: REST with mock ──

@@ -24,6 +24,8 @@ ACTION_SYSTEM_PROMPTS = {
     "DEBUG_MODE":    "Analyze the code for bugs. Explain each issue clearly and provide the fix.",
     "REVIEW_MODE":   "Review the code for quality, performance, and best practices.",
     "EXPLAIN_CODE":  "Explain the code clearly as if talking to a developer. Be conversational.",
+    # CHAT: plain text replies only — no code blocks, no markdown, no function output
+    "CHAT":          "Respond conversationally as Senorita, a helpful AI coding assistant. Answer in plain text only. Do NOT generate code unless explicitly asked.",
 }
 
 async def ask_llm(

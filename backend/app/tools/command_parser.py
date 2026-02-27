@@ -38,4 +38,5 @@ def parse_command(transcript: str) -> dict:
                 "raw": transcript,
                 "param": transcript_lower.replace(phrase, "").strip()
             }
-    return {"action": "GENERATE_CODE", "raw": transcript, "param": transcript}
+    # Default: treat unrecognized input as a plain conversational message — no code generation
+    return {"action": "CHAT", "raw": transcript, "param": transcript}

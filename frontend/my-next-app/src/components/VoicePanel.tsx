@@ -20,16 +20,25 @@ import {
 /* ============================================================
    TYPES
    ============================================================ */
+export interface CodeChange {
+  heading: string;        // short title e.g. "Added error handler"
+  description: string;    // one-line description of what changed
+  action: string;         // insert | replace_file | replace_selection | delete_lines
+  filename: string;       // which file
+  code?: string;          // the actual code snippet
+}
+
 export interface VoicePanelProps {
   editorContext: EditorContext;
   onAIResponse: (response: AICommandResponse) => void;
   onTranscriptChange?: (transcript: string) => void;
   onCodeAction?: (action: CodeActionData) => void;
+  onSummarize?: (messages: ChatMessage[], codeChanges: CodeChange[]) => void;
 }
 
 type MessageRole = "user" | "assistant" | "error";
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   role: MessageRole;
   text: string;
@@ -244,15 +253,48 @@ export function VoicePanel({
   onAIResponse,
   onTranscriptChange,
   onCodeAction,
+  onSummarize,
 }: VoicePanelProps): React.ReactElement {
   const [messages, setMessages]         = useState<ChatMessage[]>([]);
   const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [codeChanges, setCodeChanges]   = useState<CodeChange[]>([]);
 
   const chatEndRef      = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
   const streamBubbleId  = useRef<string | null>(null);
   const streamChunks    = useRef<string[]>([]);
+
+  /* ── Summarize handler ── */
+  const handleSummarize = useCallback(async () => {
+    const relevant = messages.filter(m => m.role !== "error");
+    if (relevant.length === 0) return;
+    if (onSummarize) {
+      onSummarize(relevant, codeChanges);
+      return;
+    }
+    // Fallback: direct API call if no parent handler
+    setIsSummarizing(true);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const res = await fetch(`${API_BASE}/api/summarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: relevant.map(m => ({ role: m.role, text: m.text, intent: m.intent ?? null })),
+          filename: editorContext.filename || null,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      console.log("[VoicePanel] Summary:", data);
+    } catch (err) {
+      console.error("[VoicePanel] Summarize error:", err);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }, [messages, codeChanges, onSummarize, editorContext.filename]);
 
   /* ── Auto-grow textarea ── */
   const autoGrow = () => {
@@ -361,7 +403,26 @@ export function VoicePanel({
         onCodeAction: (data) => {
           // Notify parent to show pending action in Monaco
           onCodeAction?.(data);
-          
+
+          // Track each edit as a code change for the summary
+          if (data.edits && data.edits.length > 0) {
+            const actionLabels: Record<string, string> = {
+              insert: "Inserted code",
+              replace_file: "Replaced file content",
+              replace_selection: "Replaced selection",
+              delete_lines: "Deleted lines",
+              create_file: "Created file",
+            };
+            const newChanges: CodeChange[] = data.edits.map(edit => ({
+              heading: actionLabels[edit.action] ?? "Code change",
+              description: data.explanation || "AI made a code change",
+              action: edit.action,
+              filename: edit.file_path || editorContext.filename || "untitled",
+              code: edit.code?.slice(0, 300),
+            }));
+            setCodeChanges(prev => [...prev, ...newChanges]);
+          }
+
           // Update the streaming bubble with code action info
           setMessages(prev =>
             prev.map(m =>
@@ -603,6 +664,41 @@ export function VoicePanel({
                   )}
                 </svg>
                 {tts.autoSpeak ? "voice on" : "voice off"}
+              </button>
+            )}
+
+            {/* Summarize button */}
+            {messages.filter(m => m.role !== "error").length > 0 && (
+              <button
+                onClick={handleSummarize}
+                disabled={isSummarizing || isProcessing}
+                title="Summarize conversation — generates flowcharts & diagrams"
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  background: isSummarizing ? "rgba(139,92,246,0.15)" : "rgba(139,92,246,0.08)",
+                  border: `1px solid ${isSummarizing ? "rgba(139,92,246,0.5)" : "rgba(139,92,246,0.25)"}`,
+                  color: isSummarizing ? "#A78BFA" : "#8B5CF6",
+                  fontSize: "0.58rem", padding: "2px 7px",
+                  borderRadius: 3, cursor: isSummarizing ? "default" : "pointer",
+                  fontFamily: "'JetBrains Mono', monospace", transition: "all 0.2s",
+                  opacity: isProcessing ? 0.4 : 1,
+                }}
+                onMouseEnter={e => { if (!isSummarizing && !isProcessing) { e.currentTarget.style.background = "rgba(139,92,246,0.18)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; e.currentTarget.style.color = "#C4B5FD"; }}}
+                onMouseLeave={e => { if (!isSummarizing) { e.currentTarget.style.background = "rgba(139,92,246,0.08)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; e.currentTarget.style.color = "#8B5CF6"; }}}
+              >
+                {isSummarizing ? (
+                  <svg width="9" height="9" viewBox="0 0 9 9" fill="none" style={{ animation: "vpSpin 0.8s linear infinite" }}>
+                    <circle cx="4.5" cy="4.5" r="3.5" stroke="#A78BFA" strokeWidth="1.5" strokeDasharray="12 8" />
+                  </svg>
+                ) : (
+                  <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                    <rect x="1" y="1" width="7" height="7" rx="1.5" />
+                    <line x1="2.5" y1="3" x2="6.5" y2="3" />
+                    <line x1="2.5" y1="4.5" x2="6.5" y2="4.5" />
+                    <line x1="2.5" y1="6" x2="5" y2="6" />
+                  </svg>
+                )}
+                {isSummarizing ? "analyzing…" : "summarize"}
               </button>
             )}
 

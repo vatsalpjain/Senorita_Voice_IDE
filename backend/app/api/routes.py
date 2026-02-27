@@ -1,10 +1,11 @@
 import logging
+import json
 from typing import List
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 import io
 
-from app.models.request import TextCommandRequest, TTSRequest
+from app.models.request import TextCommandRequest, TTSRequest, SummarizeRequest
 from app.models.response import SenoResponse
 from app.tools.command_parser import parse_command
 from app.services.groq_service import ask_llm
@@ -85,6 +86,90 @@ async def get_voices():
 async def n8n_trigger(action: str, payload: dict):
     """Direct local webhooks trigger API entry"""
     return await trigger_n8n(action.upper(), payload)
+
+SUMMARIZE_SYSTEM_PROMPT = """You are Senorita, an AI coding assistant. Analyze this conversation between a developer and an AI assistant.
+Return ONLY a valid JSON object (no markdown, no explanation, just the JSON) with this exact structure:
+
+{
+  "title": "Short descriptive session title",
+  "overview": "2-3 sentence overview of what was accomplished",
+  "intent_breakdown": [
+    { "intent": "generate|refactor|explain|fix|test|document", "count": 2, "description": "What was done" }
+  ],
+  "key_actions": [
+    { "step": 1, "action": "Short action label", "detail": "One sentence detail", "type": "user|ai|code" }
+  ],
+  "flowchart": "flowchart TD\\n    A[User Request] --> B{AI Analysis}\\n    B --> C[Code Generated]\\n    ...(full mermaid flowchart of the conversation flow, use proper mermaid syntax)",
+  "code_changes": [
+    { "heading": "Short title of the change e.g. Added error handler", "description": "One sentence describing exactly what was changed in the file", "action": "insert|replace_file|replace_selection|delete_lines", "filename": "filename.ext" }
+  ],
+  "code_topics": ["list", "of", "code", "topics", "discussed"],
+  "insights": [
+    { "icon": "emoji", "title": "Insight title", "body": "One sentence insight" }
+  ],
+  "stats": {
+    "total_messages": 10,
+    "user_messages": 5,
+    "ai_messages": 5,
+    "code_blocks": 3,
+    "intents_used": ["generate", "explain"]
+  }
+}
+
+For code_changes: use the actual file edits listed in the CODE CHANGES section if provided. If no code changes were made, return an empty array [].
+Make the flowchart accurately represent the actual conversation flow. Use real node labels from the conversation. Keep the JSON strictly valid."""
+
+@router.post("/summarize")
+async def summarize_conversation(request: SummarizeRequest):
+    """Summarizes a conversation into structured JSON with flowcharts and diagrams"""
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="No messages to summarize")
+
+    # Build conversation transcript for the LLM
+    transcript_lines = []
+    for msg in request.messages:
+        role_label = "Developer" if msg.role == "user" else "AI Assistant"
+        intent_tag = f" [{msg.intent}]" if msg.intent else ""
+        transcript_lines.append(f"{role_label}{intent_tag}: {msg.text[:500]}")
+    
+    transcript = "\n".join(transcript_lines)
+    context_note = f"\nActive file: {request.filename}" if request.filename else ""
+
+    # Build code changes section
+    changes_section = ""
+    if request.code_changes:
+        changes_lines = []
+        for c in request.code_changes:
+            changes_lines.append(f"- [{c.action.upper()}] {c.heading} in {c.filename}: {c.description}")
+        changes_section = "\n\nCODE CHANGES MADE:\n" + "\n".join(changes_lines)
+    
+    prompt = f"Analyze this coding session conversation and return the structured JSON summary:{context_note}\n\n---\n{transcript}\n---{changes_section}"
+
+    try:
+        raw = await ask_llm(
+            prompt=prompt,
+            system_prompt=SUMMARIZE_SYSTEM_PROMPT,
+            action="GENERATE_CODE",
+            temperature=0.2,
+            max_tokens=3000,
+        )
+        # Strip any markdown code fences if LLM added them
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```", 2)[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.rsplit("```", 1)[0].strip()
+
+        summary = json.loads(cleaned)
+        return {"ok": True, "summary": summary}
+    except json.JSONDecodeError as e:
+        logger.error(f"Summarize JSON parse error: {e}\nRaw: {raw[:500]}")
+        raise HTTPException(status_code=500, detail=f"LLM returned invalid JSON: {str(e)}")
+    except Exception as e:
+        logger.error(f"Summarize error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/status")
 async def check_status():

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { VoicePanel } from "../../components/VoicePanel";
+import { VoicePanel, ChatMessage, CodeChange } from "../../components/VoicePanel";
+import { ConversationSummary, ConversationSummaryData } from "../../components/ConversationSummary";
 import {
   AICommandResponse,
   EditorContext,
@@ -1280,6 +1281,16 @@ const EditorStyles = (): React.ReactElement => (
       to { opacity: 1; transform: translateY(0); }
     }
 
+    @keyframes vpSpin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    @keyframes vpWaveBar {
+      0%,100% { transform: scaleY(0.2); }
+      50%     { transform: scaleY(1); }
+    }
+
     .editor-ready {
       animation: editorFadeIn 0.5s ease forwards;
     }
@@ -1329,6 +1340,11 @@ export default function EditorPage(): React.ReactElement {
   const [voiceOpen, setVoiceOpen]           = useState<boolean>(false);
   const [voicePanelW, setVoicePanelW]       = useState<number>(300);
   const [lastTranscript, setLastTranscript] = useState<string>("");
+
+  /* ---- Summary panel state ---- */
+  const [summaryData, setSummaryData]       = useState<ConversationSummaryData | null>(null);
+  const [summaryOpen, setSummaryOpen]       = useState<boolean>(false);
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(false);
   const isVoiceResizing    = useRef<boolean>(false);
   const voiceResizeStartX  = useRef<number>(0);
   const voiceResizeStartW  = useRef<number>(300);
@@ -1336,6 +1352,38 @@ export default function EditorPage(): React.ReactElement {
   const isResizing = useRef<boolean>(false);
   const startX = useRef<number>(0);
   const startWidth = useRef<number>(220);
+
+  /* ----------------------------------------------------------------
+     Summary handler — called by VoicePanel's Summarize button
+     ---------------------------------------------------------------- */
+  const handleSummarize = useCallback(async (messages: ChatMessage[], codeChanges: CodeChange[]) => {
+    setSummaryLoading(true);
+    setSummaryOpen(true);
+    setSummaryData(null);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const res = await fetch(`${API_BASE}/api/summarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messages.map(m => ({ role: m.role, text: m.text, intent: m.intent ?? null })),
+          code_changes: codeChanges.map(c => ({ heading: c.heading, description: c.description, action: c.action, filename: c.filename })),
+          filename: activeTabId ? (tabs.find(t => t.id === activeTabId)?.name ?? null) : null,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.ok && data.summary) {
+        setSummaryData(data.summary as ConversationSummaryData);
+      }
+    } catch (err) {
+      console.error("[EditorPage] Summarize error:", err);
+      setSummaryData(null);
+      setSummaryOpen(false);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [activeTabId, tabs]);
 
   /* ----------------------------------------------------------------
      AI response handler — inserts / appends / replaces tab content
@@ -1732,6 +1780,7 @@ export default function EditorPage(): React.ReactElement {
                   editorContext={editorContext}
                   onAIResponse={handleAIResponse}
                   onTranscriptChange={setLastTranscript}
+                  onSummarize={handleSummarize}
                   onCodeAction={(action) => {
                     // Convert CodeActionData (multi-file) to CodeAction format for Monaco
                     // Use first edit for now (single-file support in this view)
@@ -1755,6 +1804,152 @@ export default function EditorPage(): React.ReactElement {
 
         {/* Status bar */}
         <StatusBar activeTab={activeTab} fileCount={totalFiles} cursorPos={cursorPos} />
+
+        {/* ── Summary Overlay Panel ── */}
+        {summaryOpen && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 500,
+            background: "rgba(7,9,14,0.75)",
+            backdropFilter: "blur(6px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "24px",
+            animation: "editorFadeIn 0.2s ease forwards",
+          }}
+            onClick={e => { if (e.target === e.currentTarget) setSummaryOpen(false); }}
+          >
+            <div style={{
+              width: "min(820px, 100%)",
+              height: "min(88vh, 860px)",
+              background: "#08090F",
+              border: "1px solid #1A2033",
+              borderRadius: 16,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 32px 100px rgba(0,0,0,0.7), 0 0 0 1px rgba(139,92,246,0.15)",
+            }}>
+              {/* Summary tab header */}
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "0 16px", height: 42, flexShrink: 0,
+                background: "#060810", borderBottom: "1px solid #1A2033",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 5,
+                    background: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 0 8px rgba(139,92,246,0.4)",
+                    fontSize: "0.6rem", flexShrink: 0,
+                  }}>✦</div>
+                  <span style={{
+                    fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif",
+                    color: summaryLoading ? "#5A6888" : "#C8D5E8", fontWeight: 500,
+                  }}>
+                    {summaryLoading ? "Analyzing conversation…" : (summaryData?.title ?? "Session Summary")}
+                  </span>
+                  {summaryLoading && (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
+                      style={{ animation: "vpSpin 0.8s linear infinite", flexShrink: 0 }}>
+                      <circle cx="6" cy="6" r="4.5" stroke="#8B5CF6" strokeWidth="1.5" strokeDasharray="16 10" />
+                    </svg>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSummaryOpen(false)}
+                  style={{
+                    background: "transparent", border: "1px solid #1A2033",
+                    color: "#3A4560", borderRadius: 5, padding: "3px 8px",
+                    cursor: "pointer", fontSize: "0.68rem",
+                    fontFamily: "'JetBrains Mono', monospace", transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "#C8D5E8"; e.currentTarget.style.borderColor = "#2A3555"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "#3A4560"; e.currentTarget.style.borderColor = "#1A2033"; }}
+                >
+                  ✕ close
+                </button>
+              </div>
+
+              {/* Summary body */}
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                {summaryLoading && (
+                  <div style={{
+                    height: "100%", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: 20,
+                    background: "#08090F",
+                  }}>
+                    {/* Animated orb */}
+                    <div style={{ position: "relative" }}>
+                      <div style={{
+                        width: 64, height: 64, borderRadius: "50%",
+                        background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(109,40,217,0.15))",
+                        border: "1px solid rgba(139,92,246,0.3)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: "0 0 40px rgba(139,92,246,0.2)",
+                      }}>
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"
+                          style={{ animation: "vpSpin 2s linear infinite" }}>
+                          <circle cx="14" cy="14" r="11" stroke="rgba(139,92,246,0.6)" strokeWidth="1.5" strokeDasharray="40 28" />
+                          <circle cx="14" cy="14" r="6" stroke="rgba(139,92,246,0.3)" strokeWidth="1" strokeDasharray="18 12" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{
+                        fontFamily: "'Syne', sans-serif", fontSize: "0.9rem",
+                        fontWeight: 700, color: "#C8D5E8", marginBottom: 6,
+                      }}>
+                        Analyzing your session
+                      </div>
+                      <div style={{
+                        fontSize: "0.72rem", color: "#3A4560",
+                        fontFamily: "'DM Sans', sans-serif", lineHeight: 1.6,
+                      }}>
+                        Building flowcharts, extracting insights<br />and summarizing your conversation…
+                      </div>
+                    </div>
+                    {/* Animated dots */}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {[0,1,2].map(i => (
+                        <div key={i} style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: "#8B5CF6",
+                          animation: `vpWaveBar 1.2s ease-in-out infinite ${i * 0.2}s`,
+                          transformOrigin: "center",
+                        }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {!summaryLoading && summaryData && (
+                  <ConversationSummary
+                    data={summaryData}
+                    onClose={() => setSummaryOpen(false)}
+                  />
+                )}
+                {!summaryLoading && !summaryData && (
+                  <div style={{
+                    height: "100%", display: "flex", alignItems: "center",
+                    justifyContent: "center", flexDirection: "column", gap: 12,
+                  }}>
+                    <span style={{ fontSize: "2rem" }}>⚠</span>
+                    <span style={{ color: "#FF4D6D", fontSize: "0.8rem", fontFamily: "'DM Sans', sans-serif" }}>
+                      Failed to generate summary. Is the backend running?
+                    </span>
+                    <button
+                      onClick={() => setSummaryOpen(false)}
+                      style={{
+                        background: "transparent", border: "1px solid #1A2033",
+                        color: "#5A6888", borderRadius: 6, padding: "6px 14px",
+                        cursor: "pointer", fontSize: "0.75rem",
+                      }}
+                    >Close</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Floating transcript badge (when voice panel is closed but listening) ── */}
         {!voiceOpen && lastTranscript && (

@@ -20,6 +20,10 @@ pyaudio>=0.2.14
 numpy>=1.24.0
 sounddevice>=0.4.6
 
+# Wake word detection (ONNX Runtime - lightweight, no PyTorch)
+onnxruntime>=1.16.0
+librosa>=0.10.0
+
 # State management and async
 pydantic>=2.5.0
 pydantic-settings>=2.3.0   # required for BaseSettings in config.py

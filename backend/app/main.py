@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.api.routes import router as http_router
 from app.api.websocket import router as ws_router
+from app.api.wake_word import router as wake_word_router
 import logging
 
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -36,6 +37,7 @@ app.add_middleware(
 
 app.include_router(http_router, prefix="/api")
 app.include_router(ws_router)
+app.include_router(wake_word_router)
 
 @app.get("/")
 async def root():

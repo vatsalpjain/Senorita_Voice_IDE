@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useVoice } from "../hooks/useVoice";
 import { useTTS } from "../hooks/useTTS";
+import { useWakeWord } from "../hooks/useWakeWord";
 import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
 import {
   EditorContext,
@@ -582,6 +583,44 @@ export function VoicePanel({
     },
   });
 
+  /* ── Wake word detection state ── */
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
+
+  // Ref to hold voice.startListening to avoid dependency issues
+  const voiceStartListeningRef = useRef(voice.startListening);
+  voiceStartListeningRef.current = voice.startListening;
+
+  /* ── Wake word hook ── */
+  const wakeWord = useWakeWord({
+    enabled: wakeWordEnabled,
+    threshold: 0.5,
+    onDetected: useCallback((confidence: number) => {
+      console.log(`[VoicePanel] Wake word detected! Confidence: ${confidence}`);
+      // Start voice listening when wake word is detected
+      voiceStartListeningRef.current();
+    }, []),
+    onError: useCallback((err: string) => {
+      console.error("[VoicePanel] Wake word error:", err);
+    }, []),
+  });
+
+  // Pause wake word detection while voice is active or processing
+  // Using refs to avoid dependency issues
+  const wakeWordPauseRef = useRef(wakeWord.pause);
+  const wakeWordResumeRef = useRef(wakeWord.resume);
+  wakeWordPauseRef.current = wakeWord.pause;
+  wakeWordResumeRef.current = wakeWord.resume;
+
+  useEffect(() => {
+    if (wakeWordEnabled) {
+      if (voice.status === "listening" || voice.status === "requesting" || isProcessing) {
+        wakeWordPauseRef.current();
+      } else {
+        wakeWordResumeRef.current();
+      }
+    }
+  }, [voice.status, isProcessing, wakeWordEnabled]);
+
   /* ── Text submit ── */
   const handleTextSubmit = () => {
     if (!textInput.trim() || isProcessing) return;
@@ -648,7 +687,7 @@ export function VoicePanel({
               </button>
             )}
 
-            {/* Voice toggle switch */}
+            {/* Voice toggle switch (TTS) */}
             {tts.isSupported && (
               <div
                 onClick={() => { tts.setAutoSpeak(!tts.autoSpeak); if (tts.isSpeaking) tts.stop(); }}
@@ -682,6 +721,44 @@ export function VoicePanel({
                 </div>
               </div>
             )}
+
+            {/* Wake word toggle - "Senorita" detection */}
+            <div
+              onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
+              title={wakeWordEnabled 
+                ? `Wake word ON — say "Senorita" to activate (${wakeWord.status})` 
+                : 'Wake word OFF — click to enable "Senorita" detection'}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                cursor: "pointer", userSelect: "none",
+              }}
+            >
+              <span style={{
+                fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
+                color: wakeWordEnabled ? "#00D4E8" : "#3A4560",
+                transition: "color 0.2s",
+              }}>
+                {wakeWord.status === "listening" ? "🎤" : ""}senorita
+              </span>
+              {/* Toggle pill */}
+              <div style={{
+                width: 28, height: 15, borderRadius: 8,
+                background: wakeWordEnabled ? "rgba(0,212,232,0.25)" : "#111824",
+                border: `1px solid ${wakeWordEnabled ? "rgba(0,212,232,0.5)" : "#1A2033"}`,
+                position: "relative", transition: "all 0.2s",
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  position: "absolute",
+                  top: 2, left: wakeWordEnabled ? 14 : 2,
+                  width: 9, height: 9, borderRadius: "50%",
+                  background: wakeWordEnabled ? "#00D4E8" : "#3A4560",
+                  boxShadow: wakeWordEnabled ? "0 0 4px #00D4E8" : "none",
+                  transition: "all 0.2s",
+                  animation: wakeWord.status === "listening" ? "vpMicPulse 1.8s ease-in-out infinite" : "none",
+                }} />
+              </div>
+            </div>
 
             {/* Summarize button */}
             {messages.filter(m => m.role !== "error").length > 0 && (

@@ -53,18 +53,27 @@ async def voice_ws(websocket: WebSocket):
                         await websocket.send_json({"type": "error", "message": f"STT failed: {e}"})
                         continue
                     await websocket.send_json({"type": "transcript", "text": transcript})
-                    await _handle_transcript(websocket, transcript, context=None)
+                    # Deepgram audio path always generates TTS
+                    await _handle_transcript(websocket, transcript, context=None, skip_tts=False)
 
                 elif msg_type == "text_command":
                     transcript = data.get("text", "")
                     context    = data.get("context")
-                    await _handle_transcript(websocket, transcript, context)
+                    # Frontend can set skip_tts=true to handle TTS via Web Speech API
+                    skip_tts   = data.get("skip_tts", False)
+                    await _handle_transcript(websocket, transcript, context, skip_tts=skip_tts)
 
                 elif msg_type == "ping":
                     await websocket.send_json({"type": "pong"})
 
     except WebSocketDisconnect:
         logger.info("Client disconnected from /ws/voice")
+    except RuntimeError as e:
+        # Starlette raises RuntimeError when receive() is called after disconnect
+        if "disconnect" in str(e).lower():
+            logger.info("Client disconnected from /ws/voice (stale receive)")
+        else:
+            logger.error(f"WebSocket runtime error: {e}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         try:
@@ -74,15 +83,30 @@ async def voice_ws(websocket: WebSocket):
 
 
 async def _handle_transcript(
-    websocket: WebSocket, transcript: str, context: str | None
+    websocket: WebSocket,
+    transcript: str,
+    context: str | None,
+    *,
+    skip_tts: bool = False,
 ):
-    """Processes textual transcript to an actionable response and sends TTS format"""
+    """
+    Processes textual transcript → action → LLM/n8n/code → response.
+
+    Events sent:
+      1. action         — parsed intent + param
+      2. llm_chunk      — streaming tokens (LLM actions only)
+      3. tts_start      — if skip_tts=False
+      4. <binary>       — TTS audio bytes, if skip_tts=False
+      5. tts_done        — if skip_tts=False
+      6. response_complete — always sent last, carries full assembled text + metadata
+    """
     parsed = parse_command(transcript)
     action = parsed["action"]
     param  = parsed["param"]
     await websocket.send_json({"type": "action", "action": action, "param": param})
 
     response_text = ""
+    code = None
 
     if action in LLM_ACTIONS:
         chunks = []
@@ -107,11 +131,20 @@ async def _handle_transcript(
             await websocket.send_json({"type": "instruction", "instruction": instruction})
         response_text = f"Got it. {action.replace('_', ' ').lower()} {param}."
 
-    # TTS via Deepgram SDK v5
-    await websocket.send_json({"type": "tts_start"})
-    try:
-        audio_bytes = await text_to_speech(response_text)
-        await websocket.send_bytes(audio_bytes)
-    except Exception as e:
-        logger.error(f"TTS failed (non-fatal): {e}")
-    await websocket.send_json({"type": "tts_done"})
+    # ── TTS (Deepgram) — only when client does NOT handle TTS itself ──
+    if not skip_tts:
+        await websocket.send_json({"type": "tts_start"})
+        try:
+            audio_bytes = await text_to_speech(response_text)
+            await websocket.send_bytes(audio_bytes)
+        except Exception as e:
+            logger.error(f"TTS failed (non-fatal): {e}")
+        await websocket.send_json({"type": "tts_done"})
+
+    # ── Always: send the complete assembled response so frontend can finalize ──
+    await websocket.send_json({
+        "type": "response_complete",
+        "action": action,
+        "text": response_text,
+        "code": code,
+    })

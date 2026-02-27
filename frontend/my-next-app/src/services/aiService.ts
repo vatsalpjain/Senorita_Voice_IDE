@@ -3,12 +3,16 @@
 /* ============================================================
    AI SERVICE — Voice Command → Backend → Structured Response
    ============================================================
-   All fetch calls go through this module.
-   Backend base URL is read from env; falls back to localhost.
+   Primary path: WebSocket streaming  (ws://…/ws/voice)
+   Fallback:     REST               (POST /api/command)
+   Last resort:  Client-side mocks
    ============================================================ */
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export const WS_URL =
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/voice";
 
 /* ============================================================
    REQUEST / RESPONSE TYPES
@@ -46,9 +50,59 @@ export interface AICommandResponse {
 }
 
 /* ============================================================
+   WS MESSAGE TYPES  (from backend /ws/voice)
+   ============================================================ */
+export interface WSActionMsg   { type: "action";            action: string; param: string; }
+export interface WSChunkMsg    { type: "llm_chunk";         text: string; }
+export interface WSCompleteMsg { type: "response_complete"; action: string; text: string; code: string | null; }
+export interface WSErrorMsg    { type: "error";             message: string; }
+export interface WSConnected   { type: "connected";         message: string; }
+
+export type WSIncomingMsg =
+  | WSActionMsg | WSChunkMsg | WSCompleteMsg
+  | WSErrorMsg  | WSConnected
+  | { type: string; [key: string]: unknown };
+
+/* ============================================================
+   WS STREAMING CALLBACKS
+   ============================================================ */
+export interface StreamCallbacks {
+  onAction?:   (action: string, param: string) => void;
+  onChunk?:    (chunk: string)  => void;
+  onComplete?: (text: string, action: string, code: string | null) => void;
+  onError?:    (message: string) => void;
+}
+
+/**
+ * Dispatch an incoming WS message to the appropriate callback.
+ * Called from VoicePanel's onMessage handler.
+ */
+export function dispatchWSMessage(
+  msg: WSIncomingMsg,
+  callbacks: StreamCallbacks
+): void {
+  switch (msg.type) {
+    case "action":
+      callbacks.onAction?.((msg as WSActionMsg).action, (msg as WSActionMsg).param);
+      break;
+    case "llm_chunk":
+      callbacks.onChunk?.((msg as WSChunkMsg).text);
+      break;
+    case "response_complete":
+      callbacks.onComplete?.(
+        (msg as WSCompleteMsg).text,
+        (msg as WSCompleteMsg).action,
+        (msg as WSCompleteMsg).code,
+      );
+      break;
+    case "error":
+      callbacks.onError?.((msg as WSErrorMsg).message);
+      break;
+  }
+}
+
+/* ============================================================
    INTENT ROUTER (client-side keyword sniff as fallback)
-   Used when backend is unreachable to provide best-effort
-   local classification before retrying.
    ============================================================ */
 const INTENT_PATTERNS: Array<{ pattern: RegExp; intent: CommandIntent }> = [
   { pattern: /\b(write|create|generate|add|build|make)\b/i,          intent: "generate"  },
@@ -66,20 +120,36 @@ export function classifyIntent(transcript: string): CommandIntent {
   return "unknown";
 }
 
+/**
+ * Map backend action strings to frontend CommandIntent.
+ */
+export function actionToIntent(action: string): CommandIntent {
+  const map: Record<string, CommandIntent> = {
+    GENERATE_CODE: "generate",
+    DEBUG_MODE:    "fix",
+    REVIEW_MODE:   "refactor",
+    EXPLAIN_CODE:  "explain",
+  };
+  return map[action] ?? "unknown";
+}
+
 /* ============================================================
-   MAIN API CALL
+   REST FALLBACK — POST /api/command
    ============================================================ */
 export async function sendVoiceCommand(
   request: VoiceCommandRequest,
   signal?: AbortSignal
 ): Promise<AICommandResponse> {
-  const response = await fetch(`${API_BASE}/api/voice/command`, {
+  const response = await fetch(`${API_BASE}/api/command`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify(request),
+    body: JSON.stringify({
+      transcript: request.transcript,
+      context: request.context.currentCode || undefined,
+    }),
     signal,
   });
 
@@ -92,20 +162,19 @@ export async function sendVoiceCommand(
     throw new Error(detail);
   }
 
-  const data: AICommandResponse = await response.json();
+  const data = await response.json();
 
-  /* Validate that the backend returned required fields */
-  if (typeof data.code === "undefined" || typeof data.explanation === "undefined") {
-    throw new Error("Invalid response format from backend.");
-  }
-
-  return data;
+  // Map backend SenoResponse → AICommandResponse
+  return {
+    intent: actionToIntent(data.action ?? "UNKNOWN"),
+    code: data.llm_response ?? null,
+    explanation: data.llm_response ?? data.instruction ?? "Done.",
+    insertMode: "none",
+  };
 }
 
 /* ============================================================
-   MOCK RESPONSE — used when backend is not yet connected.
-   Provides realistic structured output for every intent so the
-   UI flow can be demonstrated end-to-end without a server.
+   MOCK RESPONSE — used when backend is not yet connected
    ============================================================ */
 const MOCK_RESPONSES: Record<CommandIntent, (req: VoiceCommandRequest) => AICommandResponse> = {
   generate: (req) => ({
@@ -133,7 +202,7 @@ ${req.context.selectedText
   explain: (req) => ({
     intent: "explain",
     insertMode: "none",
-    explanation: `This code in ${req.context.filename} appears to handle core functionality. The selected snippet performs operations relevant to the application's data flow. Voice command received: "${req.transcript}"`,
+    explanation: `This code in ${req.context.filename} appears to handle core functionality. Voice command received: "${req.transcript}"`,
     code: null,
   }),
   fix: (req) => ({
@@ -153,10 +222,6 @@ describe('${req.context.filename.replace(/\.[^.]+$/, "")}', () => {
   it('should work correctly', () => {
     expect(true).toBe(true);
   });
-
-  it('handles edge cases', () => {
-    expect(null).toBeNull();
-  });
 });`,
   }),
   document: (req) => ({
@@ -167,16 +232,13 @@ describe('${req.context.filename.replace(/\.[^.]+$/, "")}', () => {
  * @fileoverview ${req.context.filename}
  * @description Auto-documented by VoiceIDE
  * Voice command: "${req.transcript}"
- *
- * @module ${req.context.filename.replace(/\.[^.]+$/, "")}
  */`,
   }),
   unknown: (req) => ({
     intent: "unknown",
     insertMode: "append",
     explanation: `I heard: "${req.transcript}". Could you be more specific? Try: "generate a function that...", "refactor this to use...", or "explain this code".`,
-    code: `// VoiceIDE: command "${req.transcript}" — unclear intent
-// Try: generate / refactor / explain / fix / test / document`,
+    code: `// VoiceIDE: command "${req.transcript}" — unclear intent`,
   }),
 };
 

@@ -3,11 +3,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useVoice, VoiceStatus } from "../hooks/useVoice";
 import { useTTS } from "../hooks/useTTS";
+import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
 import {
   sendVoiceCommandWithFallback,
+  dispatchWSMessage,
   EditorContext,
   AICommandResponse,
   classifyIntent,
+  actionToIntent,
+  WS_URL,
+  WSIncomingMsg,
 } from "../services/aiService";
 
 /* ============================================================
@@ -29,6 +34,7 @@ interface ChatMessage {
   intent?: string;
   insertMode?: string;
   usedMock?: boolean;
+  isStreaming?: boolean; // true while LLM tokens are arriving
   timestamp: Date;
 }
 
@@ -62,8 +68,8 @@ const VP_STYLES = `
    WAVEFORM (inline, small — used inside the input bar)
    ============================================================ */
 const WAVE_TIMINGS = [
-  { delay: "0s",    dur: "0.55s" },
-  { delay: "0.1s",  dur: "0.62s" },
+  { delay: "0s", dur: "0.55s" },
+  { delay: "0.1s", dur: "0.62s" },
   { delay: "0.05s", dur: "0.70s" },
   { delay: "0.15s", dur: "0.50s" },
   { delay: "0.08s", dur: "0.58s" },
@@ -90,13 +96,13 @@ function MiniWaveform({ active }: { active: boolean }) {
    INTENT BADGE
    ============================================================ */
 const INTENT_META: Record<string, { color: string; bg: string }> = {
-  generate: { color: "#00E5A0", bg: "rgba(0,229,160,0.12)"   },
-  refactor: { color: "#00D4E8", bg: "rgba(0,212,232,0.12)"   },
-  explain:  { color: "#F6C90E", bg: "rgba(246,201,14,0.12)"  },
-  fix:      { color: "#FF4D6D", bg: "rgba(255,77,109,0.12)"  },
-  test:     { color: "#8A9BB8", bg: "rgba(138,155,184,0.12)" },
-  document: { color: "#4DD9E8", bg: "rgba(77,217,232,0.12)"  },
-  unknown:  { color: "#5A6888", bg: "rgba(42,53,85,0.2)"     },
+  generate: { color: "#00E5A0", bg: "rgba(0,229,160,0.12)" },
+  refactor: { color: "#00D4E8", bg: "rgba(0,212,232,0.12)" },
+  explain: { color: "#F6C90E", bg: "rgba(246,201,14,0.12)" },
+  fix: { color: "#FF4D6D", bg: "rgba(255,77,109,0.12)" },
+  test: { color: "#8A9BB8", bg: "rgba(138,155,184,0.12)" },
+  document: { color: "#4DD9E8", bg: "rgba(77,217,232,0.12)" },
+  unknown: { color: "#5A6888", bg: "rgba(42,53,85,0.2)" },
 };
 
 function IntentBadge({ intent }: { intent: string }) {
@@ -119,7 +125,7 @@ function IntentBadge({ intent }: { intent: string }) {
 function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) => void }) {
   const [codeOpen, setCodeOpen] = useState(false);
   const isUser = msg.role === "user";
-  const isErr  = msg.role === "error";
+  const isErr = msg.role === "error";
   const ts = msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -135,11 +141,10 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
         background: isErr
           ? "rgba(255,77,109,0.1)"
           : isUser
-          ? "rgba(0,212,232,0.1)"
-          : "#111824",
-        border: `1px solid ${
-          isErr ? "rgba(255,77,109,0.25)" : isUser ? "rgba(0,212,232,0.2)" : "#1A2033"
-        }`,
+            ? "rgba(0,212,232,0.1)"
+            : "#111824",
+        border: `1px solid ${isErr ? "rgba(255,77,109,0.25)" : isUser ? "rgba(0,212,232,0.2)" : "#1A2033"
+          }`,
         borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
         padding: "8px 11px",
       }}>
@@ -158,6 +163,10 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>
           {msg.text}
+          {/* Blinking cursor while streaming */}
+          {msg.isStreaming && (
+            <span style={{ animation: "vpBlink 0.9s ease-in-out infinite", color: "#00D4E8", marginLeft: 2 }}>│</span>
+          )}
         </p>
 
         {/* Code toggle — assistant only */}
@@ -225,20 +234,23 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 }
 
 /* ============================================================
-   MAIN VOICE PANEL — Chat style
+   MAIN VOICE PANEL — Chat style with WebSocket streaming
    ============================================================ */
 export function VoicePanel({
   editorContext,
   onAIResponse,
   onTranscriptChange,
 }: VoicePanelProps): React.ReactElement {
-  const [messages, setMessages]           = useState<ChatMessage[]>([]);
-  const [textInput, setTextInput]         = useState("");
-  const [isProcessing, setIsProcessing]   = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [textInput, setTextInput] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const abortRef      = useRef<AbortController | null>(null);
-  const chatEndRef    = useRef<HTMLDivElement>(null);
-  const textareaRef   = useRef<HTMLTextAreaElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Streaming state — accumulate chunks into a live assistant bubble
+  const streamBubbleId = useRef<string | null>(null);
+  const streamChunks = useRef<string[]>([]);
 
   /* ── Auto-grow textarea ── */
   const autoGrow = () => {
@@ -253,17 +265,98 @@ export function VoicePanel({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* ── Cleanup on unmount ── */
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
+  /* ── TTS hook ── */
+  const tts = useTTS({ rate: 1, pitch: 1, volume: 1, lang: "en-US" });
 
-  /* ── Core command handler (shared by voice + text) ── */
+  /* ── WebSocket connection ── */
+  const ws = useWebSocket({
+    url: WS_URL,
+    autoConnect: true,
+    onMessage: useCallback((msg: WSMessage) => {
+      dispatchWSMessage(msg as WSIncomingMsg, {
+        onAction: (action, param) => {
+          // Create the streaming assistant bubble
+          const bubbleId = `a-${Date.now()}`;
+          streamBubbleId.current = bubbleId;
+          streamChunks.current = [];
+
+          const intent = actionToIntent(action);
+          const streamingMsg: ChatMessage = {
+            id: bubbleId,
+            role: "assistant",
+            text: "",
+            code: null,
+            intent,
+            isStreaming: true,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, streamingMsg]);
+        },
+
+        onChunk: (chunk) => {
+          streamChunks.current.push(chunk);
+          const accumulated = streamChunks.current.join("");
+
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === streamBubbleId.current
+                ? { ...m, text: accumulated }
+                : m
+            )
+          );
+        },
+
+        onComplete: (text, action, code) => {
+          const intent = actionToIntent(action);
+
+          // Finalize the streaming bubble
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === streamBubbleId.current
+                ? { ...m, text, code, intent, isStreaming: false }
+                : m
+            )
+          );
+
+          streamBubbleId.current = null;
+          streamChunks.current = [];
+          setIsProcessing(false);
+
+          // Notify parent
+          onAIResponse({
+            intent,
+            code,
+            explanation: text,
+            insertMode: "none",
+          });
+
+          // Auto-speak via Web Speech TTS
+          if (tts.autoSpeak && tts.isSupported && text) {
+            tts.speak(text);
+          }
+        },
+
+        onError: (message) => {
+          const errMsg: ChatMessage = {
+            id: `e-${Date.now()}`,
+            role: "error",
+            text: message,
+            code: null,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, errMsg]);
+          setIsProcessing(false);
+          streamBubbleId.current = null;
+          streamChunks.current = [];
+        },
+      });
+    }, [onAIResponse, tts]),
+  });
+
+  /* ── Core command handler ── */
   const handleCommand = useCallback(async (transcript: string) => {
     const trimmed = transcript.trim();
     if (!trimmed || isProcessing) return;
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -276,39 +369,54 @@ export function VoicePanel({
     setIsProcessing(true);
     onTranscriptChange?.(trimmed);
 
-    try {
-      const result = await sendVoiceCommandWithFallback(
-        { transcript: trimmed, context: editorContext },
-        controller.signal
-      );
-      const { usedMock, ...response } = result;
-      onAIResponse(response);
+    if (ws.isConnected) {
+      // ── PRIMARY: WebSocket streaming ──
+      ws.send({
+        type: "text_command",
+        text: trimmed,
+        context: editorContext.currentCode || null,
+        skip_tts: true,  // Frontend handles TTS via Web Speech API
+      });
+      // Response handling happens in the onMessage callbacks above
+    } else {
+      // ── FALLBACK: REST with mock ──
+      try {
+        const result = await sendVoiceCommandWithFallback(
+          { transcript: trimmed, context: editorContext },
+        );
+        const { usedMock, ...response } = result;
+        onAIResponse(response);
 
-      const assistantMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        text: response.explanation,
-        code: response.code,
-        intent: response.intent,
-        insertMode: response.insertMode,
-        usedMock: !!usedMock,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      const errMsg: ChatMessage = {
-        id: `e-${Date.now()}`,
-        role: "error",
-        text: err instanceof Error ? err.message : "Unknown error occurred.",
-        code: null,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errMsg]);
-    } finally {
-      setIsProcessing(false);
+        const assistantMsg: ChatMessage = {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          text: response.explanation,
+          code: response.code,
+          intent: response.intent,
+          insertMode: response.insertMode,
+          usedMock: !!usedMock,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+
+        if (tts.autoSpeak && tts.isSupported && response.explanation) {
+          tts.speak(response.explanation);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        const errMsg: ChatMessage = {
+          id: `e-${Date.now()}`,
+          role: "error",
+          text: err instanceof Error ? err.message : "Unknown error occurred.",
+          code: null,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, errMsg]);
+      } finally {
+        setIsProcessing(false);
+      }
     }
-  }, [isProcessing, editorContext, onAIResponse, onTranscriptChange]);
+  }, [isProcessing, editorContext, onAIResponse, onTranscriptChange, ws, tts]);
 
   /* ── Voice hook ── */
   const voice = useVoice({
@@ -328,19 +436,6 @@ export function VoicePanel({
     },
   });
 
-  /* ── TTS hook ── */
-  const tts = useTTS({ rate: 1, pitch: 1, volume: 1, lang: "en-US" });
-
-  /* ── Auto-speak every new assistant message when autoSpeak is on ── */
-  useEffect(() => {
-    if (!tts.autoSpeak || !tts.isSupported) return;
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.role !== "assistant") return;
-    tts.speak(last.text);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages]);
-
   /* ── Text submit ── */
   const handleTextSubmit = () => {
     if (!textInput.trim() || isProcessing) return;
@@ -358,8 +453,8 @@ export function VoicePanel({
     }
   };
 
-  const isActive      = voice.status === "listening" || voice.status === "requesting";
-  const liveInterim   = voice.interimTranscript;
+  const isActive = voice.status === "listening" || voice.status === "requesting";
+  const liveInterim = voice.interimTranscript;
   const detectedIntent = liveInterim ? classifyIntent(liveInterim) : null;
 
   return (
@@ -383,23 +478,30 @@ export function VoicePanel({
               fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
               fontFamily: "'JetBrains Mono', monospace", color: "#2A3555",
             }}>AI Assistant</span>
-            {/* Status dot */}
+            {/* WS status dot */}
             <span style={{
               width: 5, height: 5, borderRadius: "50%", display: "inline-block",
-              background: isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#2A3555",
+              background: ws.isConnected
+                ? isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#00E5A0"
+                : "#FF4D6D",
               boxShadow: isActive ? "0 0 5px #00D4E8" : "none",
               transition: "background 0.3s",
             }} />
             <span style={{
               fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-              color: isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#2A3555",
+              color: ws.isConnected
+                ? isActive ? "#00D4E8" : isProcessing ? "#F6C90E" : "#00E5A0"
+                : "#FF4D6D",
               transition: "color 0.3s",
             }}>
-              {isActive ? "Listening…" : isProcessing ? "Thinking…" : voice.isSupported ? "Ready" : "Text only"}
+              {!ws.isConnected ? "Offline" :
+                isActive ? "Listening…" :
+                  isProcessing ? "Thinking…" :
+                    voice.isSupported ? "Connected" : "Text only"}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Stop speaking button — visible while TTS is active */}
+            {/* Stop speaking button */}
             {tts.isSpeaking && (
               <button
                 onClick={tts.stop}
@@ -438,8 +540,8 @@ export function VoicePanel({
                   borderRadius: 3, cursor: "pointer",
                   fontFamily: "'JetBrains Mono', monospace", transition: "all 0.2s",
                 }}
-                onMouseEnter={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#00E5A0"; e.currentTarget.style.borderColor = "rgba(0,229,160,0.3)"; }}}
-                onMouseLeave={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; }}}
+                onMouseEnter={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#00E5A0"; e.currentTarget.style.borderColor = "rgba(0,229,160,0.3)"; } }}
+                onMouseLeave={e => { if (!tts.autoSpeak) { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; } }}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
                   stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
@@ -499,9 +601,15 @@ export function VoicePanel({
                 Ask anything about your code
               </p>
               <div style={{ fontSize: "0.68rem", color: "#2A3555", lineHeight: 1.6 }}>
-                <span style={{ color: "#4DD9E8" }}>"generate a fetch helper"</span><br />
-                <span style={{ color: "#4DD9E8" }}>"refactor this to async/await"</span><br />
-                <span style={{ color: "#4DD9E8" }}>"explain what this does"</span>
+                <span style={{ color: "#4DD9E8" }}>&quot;generate a fetch helper&quot;</span><br />
+                <span style={{ color: "#4DD9E8" }}>&quot;refactor this to async/await&quot;</span><br />
+                <span style={{ color: "#4DD9E8" }}>&quot;explain what this does&quot;</span>
+              </div>
+              {/* WS connection indicator in empty state */}
+              <div style={{ marginTop: 8, fontSize: "0.58rem", fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ color: ws.isConnected ? "#00E5A0" : "#FF4D6D" }}>
+                  ● {ws.isConnected ? "Connected to backend" : "Backend offline — using mock"}
+                </span>
               </div>
             </div>
           ) : (
@@ -511,49 +619,55 @@ export function VoicePanel({
           )}
 
           {/* Typing / listening indicator */}
-          {(isProcessing || isActive) && (
+          {(isProcessing && !streamBubbleId.current) && (
             <div style={{
               display: "flex", flexDirection: "column",
               alignItems: "flex-start", padding: "4px 12px",
               animation: "vpSlideIn 0.2s ease forwards",
             }}>
-              {isActive && liveInterim && (
-                <div style={{
-                  maxWidth: "88%", background: "rgba(0,212,232,0.08)",
-                  border: "1px solid rgba(0,212,232,0.15)",
-                  borderRadius: "12px 12px 12px 2px",
-                  padding: "6px 10px", marginBottom: 4,
+              <div style={{
+                background: "#111824", border: "1px solid #1A2033",
+                borderRadius: "12px 12px 12px 2px", padding: "8px 14px",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: "#00D4E8",
+                    animation: `vpWaveBar 1s ease-in-out infinite ${i * 0.18}s`,
+                    transformOrigin: "center",
+                  }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Live interim transcript while voice is active */}
+          {isActive && liveInterim && (
+            <div style={{
+              display: "flex", flexDirection: "column",
+              alignItems: "flex-end", padding: "4px 12px",
+              animation: "vpSlideIn 0.2s ease forwards",
+            }}>
+              <div style={{
+                maxWidth: "88%", background: "rgba(0,212,232,0.08)",
+                border: "1px solid rgba(0,212,232,0.15)",
+                borderRadius: "12px 12px 2px 12px",
+                padding: "6px 10px",
+              }}>
+                <p style={{
+                  fontSize: "0.76rem", color: "#8A9BB8", margin: 0, fontStyle: "italic",
+                  fontFamily: "'DM Sans', sans-serif",
                 }}>
-                  <p style={{
-                    fontSize: "0.76rem", color: "#8A9BB8", margin: 0, fontStyle: "italic",
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}>
-                    {liveInterim}
-                    <span style={{ animation: "vpBlink 0.9s ease-in-out infinite", color: "#00D4E8", marginLeft: 2 }}>│</span>
-                  </p>
-                  {detectedIntent && detectedIntent !== "unknown" && (
-                    <div style={{ marginTop: 4 }}>
-                      <IntentBadge intent={detectedIntent} />
-                    </div>
-                  )}
-                </div>
-              )}
-              {isProcessing && (
-                <div style={{
-                  background: "#111824", border: "1px solid #1A2033",
-                  borderRadius: "12px 12px 12px 2px", padding: "8px 14px",
-                  display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: 6, height: 6, borderRadius: "50%",
-                      background: "#00D4E8",
-                      animation: `vpWaveBar 1s ease-in-out infinite ${i * 0.18}s`,
-                      transformOrigin: "center",
-                    }} />
-                  ))}
-                </div>
-              )}
+                  {liveInterim}
+                  <span style={{ animation: "vpBlink 0.9s ease-in-out infinite", color: "#00D4E8", marginLeft: 2 }}>│</span>
+                </p>
+                {detectedIntent && detectedIntent !== "unknown" && (
+                  <div style={{ marginTop: 4 }}>
+                    <IntentBadge intent={detectedIntent} />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -630,13 +744,13 @@ export function VoicePanel({
               )}
             </button>
 
-            {/* Mic button — right-most, bottom-right of input bar */}
+            {/* Mic button */}
             <button
               onClick={voice.toggle}
               disabled={!voice.isSupported || isProcessing}
               title={
                 !voice.isSupported ? "Speech not supported in this browser" :
-                isActive ? "Stop listening" : "Start voice input"
+                  isActive ? "Stop listening" : "Start voice input"
               }
               style={{
                 width: 30, height: 30, borderRadius: 7, flexShrink: 0,

@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { VoicePanel } from "./VoicePanel";
 import { MonacoEditor, CodeAction } from "./MonacoEditor";
+import { DiffApprovalPanel } from "./DiffApprovalPanel";
 import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
+import { usePendingEdits } from "../hooks/usePendingEdits";
+import { useProjectFiles } from "../hooks/useProjectFiles";
+import { PendingEdit } from "../types/edits";
 import {
   dispatchWSMessage,
   buildAgenticCommand,
@@ -13,8 +17,10 @@ import {
   DebugResultData,
   EditorContext,
   AICommandResponse,
+  SingleEditData,
 } from "../services/aiService";
 import { useTTS } from "../hooks/useTTS";
+import { EditInstruction } from "../types/edits";
 
 /* ============================================================
    TYPES
@@ -72,8 +78,43 @@ export function IDELayout(): React.ReactElement {
   const [selection, setSelection] = useState("");
   const [debugInfo, setDebugInfo] = useState<DebugResultData | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [showDiffPanel, setShowDiffPanel] = useState(false);
 
   const tts = useTTS({ rate: 1, pitch: 1, volume: 1, lang: "en-US" });
+  
+  // Project files management for multi-file context
+  const projectFiles = useProjectFiles();
+  
+  // Callback when an edit is accepted — sync editor content
+  const handleEditAccepted = useCallback((edit: PendingEdit) => {
+    // If the accepted edit is for the current active file, update editor content
+    if (edit.filePath === activeFile.path || edit.filePath.endsWith(activeFile.name)) {
+      setActiveFile(prev => ({
+        ...prev,
+        content: edit.proposedContent,
+        isDirty: false, // Just saved to disk
+      }));
+    }
+    setStatusMessage(`Applied: ${edit.filePath}`);
+  }, [activeFile.path, activeFile.name]);
+  
+  // Multi-file pending edits management with callbacks
+  const pendingEdits = usePendingEdits({
+    onEditAccepted: handleEditAccepted,
+    createFile: projectFiles.createNewFile,
+  });
+  
+  // Memoized file content getter for pending edits
+  const getFileContent = useMemo(() => {
+    return async (filePath: string) => {
+      // First check if it's the active file
+      if (filePath === activeFile.path || filePath.endsWith(activeFile.name)) {
+        return { content: activeFile.content };
+      }
+      // Otherwise use project files lookup
+      return projectFiles.getFileContent(filePath);
+    };
+  }, [activeFile.path, activeFile.name, activeFile.content, projectFiles]);
 
   // WebSocket for agentic commands
   const ws = useWebSocket({
@@ -85,8 +126,25 @@ export function IDELayout(): React.ReactElement {
           setStatusMessage(`Intent: ${intent}`);
         },
         onCodeAction: (data: CodeActionData) => {
-          setPendingAction(data);
-          setStatusMessage(`AI suggests: ${data.action}`);
+          // Convert backend edits to EditInstruction format
+          const instructions: EditInstruction[] = data.edits.map((edit: SingleEditData) => ({
+            file_path: edit.file_path,
+            action: edit.action,
+            code: edit.code,
+            insert_at_line: edit.insert_at_line,
+            start_line: edit.start_line,
+            end_line: edit.end_line,
+          }));
+          
+          // Add edits to pending edits store using the memoized file content getter
+          pendingEdits.addEditsFromInstructions(
+            instructions,
+            getFileContent,
+            data.explanation
+          );
+          
+          setShowDiffPanel(true);
+          setStatusMessage(`AI suggests ${data.edits.length} edit(s): ${data.explanation}`);
         },
         onDebugResult: (data: DebugResultData) => {
           setDebugInfo(data);
@@ -112,7 +170,7 @@ export function IDELayout(): React.ReactElement {
           setStatusMessage(`Error: ${message}`);
         },
       });
-    }, [tts]),
+    }, [tts, pendingEdits, getFileContent]),
   });
 
   // Handle voice command — send agentic command
@@ -141,7 +199,7 @@ export function IDELayout(): React.ReactElement {
     language: activeFile.language,
     filename: activeFile.name,
     currentCode: activeFile.content,
-    selectedText: selection,
+    selection: selection,
     cursorLine: cursorLine,
   };
 
@@ -306,17 +364,56 @@ export function IDELayout(): React.ReactElement {
           )}
         </div>
 
-        {/* Right: Voice Panel */}
+        {/* Right: Voice Panel or Diff Approval Panel */}
         <div style={{
-          width: 340, flexShrink: 0,
+          width: 400, flexShrink: 0,
           borderLeft: "1px solid #1A2033",
           display: "flex", flexDirection: "column",
         }}>
-          <VoicePanel
-            editorContext={editorContext}
-            onAIResponse={handleAIResponse}
-            onTranscriptChange={handleVoiceCommand}
-          />
+          {showDiffPanel && pendingEdits.edits.length > 0 ? (
+            <>
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "8px 12px", borderBottom: "1px solid #1A2033",
+                background: "#0D1020",
+              }}>
+                <span style={{ fontSize: "0.75rem", color: "#8A9BB8" }}>
+                  Review Changes
+                </span>
+                <button
+                  onClick={() => setShowDiffPanel(false)}
+                  style={{
+                    padding: "4px 8px", fontSize: "0.7rem",
+                    background: "transparent", border: "1px solid #2A3555",
+                    borderRadius: 4, color: "#5A6888", cursor: "pointer",
+                  }}
+                >
+                  Back to Voice
+                </button>
+              </div>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <DiffApprovalPanel
+                  activeEdit={pendingEdits.activeEdit}
+                  edits={pendingEdits.edits}
+                  pendingCount={pendingEdits.pendingCount}
+                  acceptedCount={pendingEdits.acceptedCount}
+                  rejectedCount={pendingEdits.rejectedCount}
+                  onSelectEdit={pendingEdits.setActiveEdit}
+                  onAccept={pendingEdits.acceptEdit}
+                  onReject={pendingEdits.rejectEdit}
+                  onAcceptAll={pendingEdits.acceptAll}
+                  onRejectAll={pendingEdits.rejectAll}
+                  isProcessing={pendingEdits.isProcessing}
+                />
+              </div>
+            </>
+          ) : (
+            <VoicePanel
+              editorContext={editorContext}
+              onAIResponse={handleAIResponse}
+              onTranscriptChange={handleVoiceCommand}
+            />
+          )}
         </div>
       </div>
     </>

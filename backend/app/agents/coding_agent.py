@@ -13,14 +13,19 @@ from app.agents.context_agent import FileContext
 logger = logging.getLogger(__name__)
 
 
-class CodeAction(TypedDict):
-    """Structured code action returned by the Coding Agent"""
+class SingleEdit(TypedDict):
+    """A single edit to a specific file"""
+    file_path: str                      # Path to the file to edit
     action: Literal["insert", "replace_selection", "replace_file", "create_file", "delete_lines"]
     code: str                           # The code to insert/replace
-    filename: str | None                # Only for create_file action
     insert_at_line: int | None          # Only for insert action
     start_line: int | None              # For delete_lines or replace range
     end_line: int | None                # For delete_lines or replace range
+
+
+class CodeAction(TypedDict):
+    """Structured code action returned by the Coding Agent — supports multi-file edits"""
+    edits: list[SingleEdit]             # List of edits (can be single or multiple files)
     explanation: str                    # Brief explanation of what was done
 
 
@@ -30,20 +35,27 @@ Your job is to generate, insert, edit, or refactor code based on the user's voic
 
 IMPORTANT: You must ALWAYS respond with valid JSON in this exact format:
 {
-  "action": "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines",
-  "code": "the code to insert or replace with",
-  "filename": "only if action is create_file",
-  "insert_at_line": 12,  // only if action is insert
-  "start_line": 5,       // only for delete_lines or range replace
-  "end_line": 10,        // only for delete_lines or range replace
+  "edits": [
+    {
+      "file_path": "path/to/file.py",
+      "action": "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines",
+      "code": "the code to insert or replace with",
+      "insert_at_line": 12,  // only if action is insert
+      "start_line": 5,       // only for delete_lines or range replace
+      "end_line": 10         // only for delete_lines or range replace
+    }
+  ],
   "explanation": "brief explanation of what you did"
 }
+
+For SINGLE FILE edits, use the current file path provided in context.
+For MULTI-FILE edits (e.g., adding import + function), include multiple entries in "edits" array.
 
 Action types:
 - "insert": Insert new code at a specific line (use insert_at_line)
 - "replace_selection": Replace the user's selected code with new code
 - "replace_file": Replace the entire file content
-- "create_file": Create a new file (provide filename)
+- "create_file": Create a new file (file_path is the new file path)
 - "delete_lines": Delete lines from start_line to end_line
 
 Guidelines:
@@ -53,6 +65,7 @@ Guidelines:
 - If adding a function, place it logically (after imports, before main, etc.)
 - For refactoring, preserve functionality while improving structure
 - Keep explanations concise (will be spoken aloud)
+- When creating related changes (e.g., new file + import), include ALL edits
 
 RESPOND ONLY WITH THE JSON OBJECT. NO MARKDOWN, NO EXTRA TEXT."""
 
@@ -86,7 +99,8 @@ async def coding_agent(
     # Parse the JSON response
     action = _parse_coding_response(response, context)
     
-    logger.info(f"Coding Agent: {action['action']} - {action['explanation'][:50]}...")
+    edit_count = len(action["edits"])
+    logger.info(f"Coding Agent: {edit_count} edit(s) - {action['explanation'][:50]}...")
     return action
 
 
@@ -135,14 +149,13 @@ def _build_coding_prompt(transcript: str, context: FileContext) -> str:
 
 
 def _parse_coding_response(response: str, context: FileContext) -> CodeAction:
-    """Parse LLM response into structured CodeAction"""
+    """Parse LLM response into structured CodeAction with multi-file support"""
     
     # Try to extract JSON from response (handle markdown code blocks)
     json_str = response.strip()
     
     # Remove markdown code blocks if present
     if json_str.startswith("```"):
-        # Find the actual JSON content
         match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", json_str, re.DOTALL)
         if match:
             json_str = match.group(1).strip()
@@ -151,29 +164,53 @@ def _parse_coding_response(response: str, context: FileContext) -> CodeAction:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse Coding Agent response as JSON: {e}")
-        # Fallback: treat entire response as code to insert
+        # Fallback: treat entire response as code to insert at current file
         return {
-            "action": "insert",
-            "code": response,
-            "filename": None,
-            "insert_at_line": context["cursor_line"],
-            "start_line": None,
-            "end_line": None,
+            "edits": [{
+                "file_path": context["file_path"],
+                "action": "insert",
+                "code": response,
+                "insert_at_line": context["cursor_line"],
+                "start_line": None,
+                "end_line": None,
+            }],
             "explanation": "Generated code (JSON parse failed, inserting raw response)",
         }
     
-    # Validate and normalize the response
+    # Handle new multi-file format
+    if "edits" in data and isinstance(data["edits"], list):
+        edits = []
+        for edit in data["edits"]:
+            action = edit.get("action", "insert")
+            if action not in ("insert", "replace_selection", "replace_file", "create_file", "delete_lines"):
+                action = "insert"
+            edits.append({
+                "file_path": edit.get("file_path", context["file_path"]),
+                "action": action,
+                "code": edit.get("code", ""),
+                "insert_at_line": edit.get("insert_at_line"),
+                "start_line": edit.get("start_line"),
+                "end_line": edit.get("end_line"),
+            })
+        return {
+            "edits": edits,
+            "explanation": data.get("explanation", "Code generated"),
+        }
+    
+    # Handle legacy single-edit format for backwards compatibility
     action = data.get("action", "insert")
     if action not in ("insert", "replace_selection", "replace_file", "create_file", "delete_lines"):
         action = "insert"
     
     return {
-        "action": action,
-        "code": data.get("code", ""),
-        "filename": data.get("filename"),
-        "insert_at_line": data.get("insert_at_line"),
-        "start_line": data.get("start_line"),
-        "end_line": data.get("end_line"),
+        "edits": [{
+            "file_path": data.get("filename") or context["file_path"],
+            "action": action,
+            "code": data.get("code", ""),
+            "insert_at_line": data.get("insert_at_line"),
+            "start_line": data.get("start_line"),
+            "end_line": data.get("end_line"),
+        }],
         "explanation": data.get("explanation", "Code generated"),
     }
 

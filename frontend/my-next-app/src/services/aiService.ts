@@ -106,15 +106,20 @@ export interface WSAgentCompleteMsg {
   error: string | null;
 }
 
-// Agent result data types
-export interface CodeActionData {
+// Single edit within a multi-file response
+export interface SingleEditData {
+  file_path: string;
   action: "insert" | "replace_selection" | "replace_file" | "create_file" | "delete_lines";
   code: string;
-  filename?: string;
   insert_at_line?: number;
   start_line?: number;
   end_line?: number;
-  explanation?: string;
+}
+
+// Agent result data types — now supports multi-file edits
+export interface CodeActionData {
+  edits: SingleEditData[];
+  explanation: string;
 }
 
 export interface DebugResultData {

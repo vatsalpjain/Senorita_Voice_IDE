@@ -2,6 +2,11 @@
 Context Agent — Runs before every other agent.
 Retrieves file content, surrounding lines, project structure, imports, and related files.
 This enriched context is passed to Coding/Debug/Workflow agents.
+
+Now enhanced with Tree-sitter AST-based symbol indexing for:
+- Fast symbol lookups (~5ms)
+- Cross-file context retrieval
+- Semantic code understanding
 """
 import os
 import re
@@ -9,7 +14,23 @@ import logging
 from pathlib import Path
 from typing import TypedDict
 
+from app.services.symbol_indexer import (
+    get_indexer,
+    Symbol,
+    SymbolIndexer,
+)
+
 logger = logging.getLogger(__name__)
+
+
+class SymbolInfo(TypedDict):
+    """Symbol information for context"""
+    name: str
+    kind: str
+    file_path: str
+    line: int
+    signature: str
+    docstring: str
 
 
 class FileContext(TypedDict):
@@ -23,6 +44,10 @@ class FileContext(TypedDict):
     project_structure: str      # File tree of the project
     imports: list[str]          # Extracted import statements
     related_files: list[str]    # Files imported by this one
+    # New: AST-based symbol information
+    symbols_in_file: list[SymbolInfo]      # All symbols in current file
+    related_symbols: list[SymbolInfo]      # Symbols from related/imported files
+    symbol_at_cursor: SymbolInfo | None    # Symbol at cursor position (if any)
 
 
 # Language detection based on file extension
@@ -214,6 +239,69 @@ def get_file_tree(root_dir: str, max_depth: int = 3, max_files: int = 100) -> st
     return "\n".join(tree_lines)
 
 
+def symbol_to_info(sym: Symbol) -> SymbolInfo:
+    """Convert Symbol dataclass to SymbolInfo TypedDict"""
+    return {
+        "name": sym.name,
+        "kind": sym.kind,
+        "file_path": sym.file_path,
+        "line": sym.line,
+        "signature": sym.signature,
+        "docstring": sym.docstring,
+    }
+
+
+def get_symbol_at_cursor(indexer: SymbolIndexer, file_path: str, cursor_line: int) -> SymbolInfo | None:
+    """Find the symbol at or containing the cursor position"""
+    file_symbols = indexer.get_file_symbols(file_path)
+    if not file_symbols:
+        return None
+    
+    # Find symbol that contains the cursor line
+    for sym in file_symbols.symbols:
+        if sym.line <= cursor_line <= sym.end_line:
+            return symbol_to_info(sym)
+    
+    # Find nearest symbol above cursor
+    nearest = None
+    for sym in file_symbols.symbols:
+        if sym.line <= cursor_line:
+            if nearest is None or sym.line > nearest.line:
+                nearest = sym
+    
+    return symbol_to_info(nearest) if nearest else None
+
+
+def extract_keywords_from_transcript(transcript: str) -> list[str]:
+    """Extract potential symbol names from a voice transcript"""
+    # Remove common filler words
+    stop_words = {
+        "the", "a", "an", "to", "for", "in", "on", "at", "and", "or", "is", "are",
+        "was", "were", "be", "been", "being", "have", "has", "had", "do", "does",
+        "did", "will", "would", "could", "should", "may", "might", "must", "can",
+        "this", "that", "these", "those", "it", "its", "i", "me", "my", "we", "our",
+        "you", "your", "he", "she", "they", "them", "their", "what", "which", "who",
+        "how", "when", "where", "why", "all", "each", "every", "both", "few", "more",
+        "most", "other", "some", "such", "no", "not", "only", "same", "so", "than",
+        "too", "very", "just", "also", "now", "here", "there", "then", "once",
+        "create", "add", "make", "write", "implement", "fix", "debug", "refactor",
+        "explain", "show", "find", "get", "set", "update", "delete", "remove",
+        "function", "class", "method", "variable", "file", "code", "line", "lines",
+    }
+    
+    # Split and filter
+    words = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', transcript.lower())
+    keywords = [w for w in words if w not in stop_words and len(w) > 2]
+    
+    # Also look for camelCase or snake_case patterns in original
+    patterns = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', transcript)
+    for p in patterns:
+        if '_' in p or (p != p.lower() and p != p.upper()):
+            keywords.append(p.lower())
+    
+    return list(set(keywords))
+
+
 async def get_context(
     file_path: str,
     file_content: str = "",
@@ -261,6 +349,42 @@ async def get_context(
         # Use parent directory as fallback only if path is absolute
         structure = get_file_tree(str(Path(file_path).parent))
     
+    # ─────────────────────────────────────────────────────────────────────────
+    # AST-based symbol indexing (Tree-sitter)
+    # ─────────────────────────────────────────────────────────────────────────
+    symbols_in_file: list[SymbolInfo] = []
+    related_symbols: list[SymbolInfo] = []
+    symbol_at_cursor: SymbolInfo | None = None
+    
+    try:
+        indexer = get_indexer()
+        
+        # Index project if not already indexed and we have a project root
+        if project_root and os.path.isdir(project_root):
+            if not indexer.index.project_root:
+                logger.info(f"Context Agent: indexing project {project_root}")
+                indexer.index_project(project_root)
+        
+        # Index current file (always, to get fresh symbols)
+        if content:
+            file_symbols = indexer.index_file(file_path, content)
+            if file_symbols:
+                symbols_in_file = [symbol_to_info(s) for s in file_symbols.symbols]
+        
+        # Get symbol at cursor position
+        symbol_at_cursor = get_symbol_at_cursor(indexer, file_path, cursor_line)
+        
+        # Get related symbols from imported files
+        related_syms = indexer.get_related_symbols(file_path)
+        related_symbols = [symbol_to_info(s) for s in related_syms[:30]]  # Limit
+        
+        logger.info(
+            f"Context Agent: found {len(symbols_in_file)} symbols in file, "
+            f"{len(related_symbols)} related symbols"
+        )
+    except Exception as e:
+        logger.warning(f"Symbol indexing failed (non-fatal): {e}")
+    
     context: FileContext = {
         "current_file": content,
         "file_path": file_path,
@@ -271,7 +395,96 @@ async def get_context(
         "project_structure": structure,
         "imports": imports,
         "related_files": related,
+        "symbols_in_file": symbols_in_file,
+        "related_symbols": related_symbols,
+        "symbol_at_cursor": symbol_at_cursor,
     }
     
     logger.info(f"Context Agent: gathered context for {file_path} ({language})")
     return context
+
+
+async def search_project_symbols(
+    query: str,
+    project_root: str | None = None,
+    limit: int = 20,
+) -> list[SymbolInfo]:
+    """
+    Search for symbols in the project matching a query.
+    Useful for finding relevant code based on voice commands.
+    
+    Args:
+        query: Search query (can be natural language or symbol name)
+        project_root: Project root to index if not already indexed
+        limit: Maximum number of results
+    
+    Returns:
+        List of matching symbols
+    """
+    try:
+        indexer = get_indexer()
+        
+        # Index project if needed
+        if project_root and os.path.isdir(project_root):
+            if not indexer.index.project_root:
+                indexer.index_project(project_root)
+        
+        # Extract keywords from query
+        keywords = extract_keywords_from_transcript(query)
+        
+        # Search for each keyword and combine results
+        all_results: list[Symbol] = []
+        seen_ids: set[str] = set()
+        
+        for keyword in keywords:
+            results = indexer.search_symbols(keyword, limit=10)
+            for sym in results:
+                sym_id = f"{sym.file_path}:{sym.line}:{sym.name}"
+                if sym_id not in seen_ids:
+                    seen_ids.add(sym_id)
+                    all_results.append(sym)
+        
+        # Also try the full query as a symbol name
+        direct_results = indexer.search_symbols(query, limit=5)
+        for sym in direct_results:
+            sym_id = f"{sym.file_path}:{sym.line}:{sym.name}"
+            if sym_id not in seen_ids:
+                seen_ids.add(sym_id)
+                all_results.append(sym)
+        
+        return [symbol_to_info(s) for s in all_results[:limit]]
+    
+    except Exception as e:
+        logger.warning(f"Symbol search failed: {e}")
+        return []
+
+
+def get_symbol_context(symbol_name: str, project_root: str | None = None) -> str:
+    """
+    Get source code context for a symbol by name.
+    Returns the code snippet containing the symbol definition.
+    
+    Args:
+        symbol_name: Name of the symbol to find
+        project_root: Project root to index if not already indexed
+    
+    Returns:
+        Source code snippet or empty string if not found
+    """
+    try:
+        indexer = get_indexer()
+        
+        if project_root and os.path.isdir(project_root):
+            if not indexer.index.project_root:
+                indexer.index_project(project_root)
+        
+        symbols = indexer.find_symbol(symbol_name)
+        if not symbols:
+            return ""
+        
+        # Get context for the first match
+        return indexer.get_context_for_symbol(symbols[0], context_lines=15)
+    
+    except Exception as e:
+        logger.warning(f"Failed to get symbol context: {e}")
+        return ""

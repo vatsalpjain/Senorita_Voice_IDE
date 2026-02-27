@@ -1733,15 +1733,19 @@ export default function EditorPage(): React.ReactElement {
                   onAIResponse={handleAIResponse}
                   onTranscriptChange={setLastTranscript}
                   onCodeAction={(action) => {
-                    // Convert CodeActionData to CodeAction format for Monaco
-                    setPendingAction({
-                      action: action.action,
-                      code: action.code,
-                      insert_at_line: action.insert_at_line,
-                      start_line: action.start_line,
-                      end_line: action.end_line,
-                      explanation: action.explanation,
-                    });
+                    // Convert CodeActionData (multi-file) to CodeAction format for Monaco
+                    // Use first edit for now (single-file support in this view)
+                    if (action.edits && action.edits.length > 0) {
+                      const firstEdit = action.edits[0];
+                      setPendingAction({
+                        action: firstEdit.action,
+                        code: firstEdit.code,
+                        insert_at_line: firstEdit.insert_at_line,
+                        start_line: firstEdit.start_line,
+                        end_line: firstEdit.end_line,
+                        explanation: action.explanation,
+                      });
+                    }
                   }}
                 />
               </div>

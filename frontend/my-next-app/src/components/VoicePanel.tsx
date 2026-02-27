@@ -366,7 +366,7 @@ export function VoicePanel({
           setMessages(prev =>
             prev.map(m =>
               m.id === streamBubbleId.current
-                ? { ...m, text: data.explanation || "Code generated", code: data.code, isStreaming: false }
+                ? { ...m, text: data.explanation || "Code generated", code: data.edits?.[0]?.code, isStreaming: false }
                 : m
             )
           );

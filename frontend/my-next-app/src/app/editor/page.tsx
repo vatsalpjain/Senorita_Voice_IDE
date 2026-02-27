@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { VoicePanel, ChatMessage, CodeChange } from "../../components/VoicePanel";
 import { ConversationSummary, ConversationSummaryData } from "../../components/ConversationSummary";
+import Link from "next/link";
+import { pushActivity } from "../../store/activityStore";
 import {
   AICommandResponse,
   EditorContext,
@@ -1188,6 +1190,37 @@ const TopBar = ({ voiceOpen, onVoiceToggle }: TopBarProps): React.ReactElement =
         <span style={{ color: "#2A3555", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace" }}>K</span>
       </div>
 
+      {/* Dashboard link */}
+      <Link
+        href="/dashboard"
+        style={{
+          display: "flex", alignItems: "center", gap: 5,
+          background: "transparent",
+          border: "1px solid #1A2033",
+          borderRadius: 5, padding: "4px 10px",
+          color: "#3A4560",
+          cursor: "pointer", transition: "all 0.2s",
+          fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif",
+          textDecoration: "none",
+        }}
+        onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
+          e.currentTarget.style.color = "#a78bfa";
+          e.currentTarget.style.borderColor = "rgba(167,139,250,0.35)";
+        }}
+        onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
+          e.currentTarget.style.color = "#3A4560";
+          e.currentTarget.style.borderColor = "#1A2033";
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="1" y="1" width="4" height="4" rx="0.8" />
+          <rect x="7" y="1" width="4" height="4" rx="0.8" />
+          <rect x="1" y="7" width="4" height="4" rx="0.8" />
+          <rect x="7" y="7" width="4" height="4" rx="0.8" />
+        </svg>
+        Dashboard
+      </Link>
+
       {/* Voice toggle button */}
       <button
         onClick={onVoiceToggle}
@@ -1712,18 +1745,46 @@ export default function EditorPage(): React.ReactElement {
         break;
       }
     }
+
+    // Track in activity store
+    const linesChanged = Math.abs(
+      newContent.split("\n").length - activeTab.content.split("\n").length
+    );
+    pushActivity({
+      type: "accept",
+      timestamp: Date.now(),
+      filename: activeTab.name,
+      project: folderName || "Virtual workspace",
+      description: pendingAction.explanation
+        ? pendingAction.explanation.slice(0, 80)
+        : `${pendingAction.action.replace("_", " ")} in ${activeTab.name}`,
+      action: pendingAction.action,
+      linesChanged,
+    });
     
     setTabs(prev => prev.map(tab => {
       if (tab.id !== activeTabId) return tab;
       return { ...tab, content: newContent, isDirty: true };
     }));
     setPendingAction(null);
-  }, [pendingAction, activeTab, activeTabId, cursorPos.line]);
+  }, [pendingAction, activeTab, activeTabId, cursorPos.line, folderName]);
 
   // Handle rejecting pending code action
   const handleRejectAction = useCallback((): void => {
+    if (pendingAction && activeTab) {
+      pushActivity({
+        type: "reject",
+        timestamp: Date.now(),
+        filename: activeTab.name,
+        project: folderName || "Virtual workspace",
+        description: pendingAction.explanation
+          ? pendingAction.explanation.slice(0, 80)
+          : `Rejected ${pendingAction.action.replace("_", " ")} in ${activeTab.name}`,
+        action: pendingAction.action,
+      });
+    }
     setPendingAction(null);
-  }, []);
+  }, [pendingAction, activeTab, folderName]);
 
   // Sidebar resize
   const handleResizeStart = (e: React.MouseEvent): void => {

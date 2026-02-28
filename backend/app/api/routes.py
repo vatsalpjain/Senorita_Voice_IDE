@@ -19,6 +19,7 @@ from app.services.smart_context import set_project_root, get_project_root
 from app.services.memory_service import get_memory_service
 from app.services.symbol_indexer import get_indexer
 from app.services.embedding_service import get_embedding_service
+from app.services.prompt_optimizer import optimize_prompt, optimize_prompt_with_llm, expand_query
 from app.models.command import CommandResult, ActionType
 from app.config import settings
 
@@ -776,4 +777,70 @@ async def get_symbol_callees(symbol_name: str):
             }
             for c in callees
         ]
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompt Optimization API — Convert natural language to systematic prompts
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OptimizePromptRequest(BaseModel):
+    """Request to optimize a prompt"""
+    prompt: str
+    file_path: str = ""
+    language: str = ""
+    selection: str = ""
+    use_llm: bool = False  # Use LLM for complex optimization
+
+
+@router.post("/prompt/optimize")
+async def optimize_user_prompt(request: OptimizePromptRequest):
+    """
+    Optimize a natural language prompt into a clear, structured instruction.
+    
+    This converts vague or confusing user input into systematic prompts
+    that yield better AI responses.
+    
+    Example:
+        Input: "make it work please"
+        Output: "Debug and fix the errors in the code"
+    """
+    context = {
+        "file_path": request.file_path,
+        "language": request.language,
+        "selection": request.selection,
+    }
+    
+    if request.use_llm:
+        result = await optimize_prompt_with_llm(request.prompt, context)
+    else:
+        result = optimize_prompt(request.prompt, context)
+    
+    return {
+        "ok": True,
+        "original": result.original,
+        "optimized": result.optimized,
+        "intent": result.intent,
+        "action_verb": result.action_verb,
+        "target": result.target,
+        "constraints": result.constraints,
+        "confidence": result.confidence,
+        "was_modified": result.was_modified,
+    }
+
+
+@router.get("/prompt/expand")
+async def expand_search_query(q: str):
+    """
+    Expand a search query into multiple related queries for better retrieval.
+    
+    Example:
+        Input: "auth"
+        Output: ["auth", "authentication", "login", "signin"]
+    """
+    expanded = expand_query(q)
+    return {
+        "ok": True,
+        "original": q,
+        "expanded": expanded,
     }

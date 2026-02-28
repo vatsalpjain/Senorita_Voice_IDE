@@ -32,6 +32,7 @@ from app.services.memory_service import get_memory_service, add_to_history, get_
 from app.services.context_manager import build_context, AssembledContext
 from app.services.embedding_service import get_embedding_service, hybrid_search
 from app.services.symbol_indexer import get_indexer
+from app.services.prompt_optimizer import optimize_prompt, OptimizedPrompt
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,8 @@ IntentType = Literal["coding", "debug", "workflow", "explain", "chat", "plan"]
 class OrchestratorState(TypedDict):
     """State passed through the LangGraph workflow"""
     # Input from frontend
-    transcript: str                     # User's voice command
+    transcript: str                     # User's voice command (original)
+    optimized_transcript: str           # Optimized version of transcript
     file_path: str                      # Current file path
     file_content: str                   # File content from editor (if available)
     cursor_line: int                    # Cursor position
@@ -59,6 +61,7 @@ class OrchestratorState(TypedDict):
     assembled_context: dict | None      # Context after smart prioritization
     chat_history: list | None           # Recent conversation history
     memories: list | None               # Relevant long-term memories
+    prompt_optimization: dict | None    # Prompt optimization details
     
     # Output
     result: dict | None                 # Result from the routed agent
@@ -156,6 +159,78 @@ def detect_intent(transcript: str, explicit_mode: str = "auto") -> IntentType:
 # LangGraph Node Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
+async def optimize_prompt_node(state: OrchestratorState) -> dict:
+    """
+    Node 0: Prompt Optimizer — converts natural language to systematic prompts.
+    
+    This runs BEFORE context gathering to:
+    - Clean up vague/confusing language
+    - Extract clear intent
+    - Normalize terminology
+    - Add structure to the request
+    """
+    try:
+        transcript = state.get("transcript", "")
+        
+        if not transcript:
+            return {
+                "optimized_transcript": "",
+                "prompt_optimization": None,
+            }
+        
+        # Build context for optimization
+        opt_context = {
+            "file_path": state.get("file_path", ""),
+            "language": "",  # Will be detected from file extension
+            "selection": state.get("selection", ""),
+            "cursor_line": state.get("cursor_line"),
+        }
+        
+        # Detect language from file path
+        file_path = state.get("file_path", "")
+        if file_path:
+            ext = file_path.split(".")[-1].lower() if "." in file_path else ""
+            lang_map = {
+                "py": "Python", "js": "JavaScript", "ts": "TypeScript",
+                "tsx": "TypeScript React", "jsx": "JavaScript React",
+                "java": "Java", "cpp": "C++", "c": "C", "go": "Go",
+                "rs": "Rust", "rb": "Ruby", "php": "PHP",
+            }
+            opt_context["language"] = lang_map.get(ext, "")
+        
+        # Optimize the prompt
+        result = optimize_prompt(
+            prompt=transcript,
+            context=opt_context,
+            intent_hint=state.get("mode") if state.get("mode") != "auto" else None,
+        )
+        
+        logger.info(
+            f"optimize_prompt_node: '{transcript[:50]}...' -> '{result.optimized[:50]}...' "
+            f"(intent={result.intent}, modified={result.was_modified})"
+        )
+        
+        return {
+            "optimized_transcript": result.optimized,
+            "prompt_optimization": {
+                "original": result.original,
+                "optimized": result.optimized,
+                "intent": result.intent,
+                "action_verb": result.action_verb,
+                "target": result.target,
+                "constraints": result.constraints,
+                "confidence": result.confidence,
+                "was_modified": result.was_modified,
+            },
+        }
+    except Exception as e:
+        logger.warning(f"Prompt optimization failed (non-fatal): {e}")
+        return {
+            "optimized_transcript": state.get("transcript", ""),
+            "prompt_optimization": None,
+        }
+
+
 async def gather_context_node(state: OrchestratorState) -> dict:
     """
     Node 1: Context Agent — always runs first to gather file context.
@@ -167,7 +242,8 @@ async def gather_context_node(state: OrchestratorState) -> dict:
     """
     try:
         file_content = state.get("file_content", "")
-        transcript = state.get("transcript", "")
+        # Use optimized transcript for better context retrieval
+        transcript = state.get("optimized_transcript") or state.get("transcript", "")
         logger.info(f"gather_context_node: file_path={state['file_path']}, file_content_len={len(file_content)}")
         
         # Get base context from Context Agent
@@ -588,9 +664,10 @@ def build_orchestrator_graph() -> StateGraph:
     Build the LangGraph state machine for the orchestrator.
     
     Flow:
-    START → gather_context → detect_intent → [route] → agent_node → END
+    START → optimize_prompt → gather_context → detect_intent → [route] → agent_node → END
     
     Enhanced with:
+    - Prompt optimization for clearer instructions
     - Planning agent for complex multi-step tasks
     - Memory integration for conversation continuity
     - Semantic search for better context retrieval
@@ -599,6 +676,7 @@ def build_orchestrator_graph() -> StateGraph:
     graph = StateGraph(OrchestratorState)
     
     # Add nodes
+    graph.add_node("optimize_prompt", optimize_prompt_node)
     graph.add_node("gather_context", gather_context_node)
     graph.add_node("detect_intent", detect_intent_node)
     graph.add_node("coding", coding_node)
@@ -608,10 +686,11 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("chat", chat_node)
     graph.add_node("planning", planning_node)
     
-    # Set entry point
-    graph.set_entry_point("gather_context")
+    # Set entry point - prompt optimization runs first
+    graph.set_entry_point("optimize_prompt")
     
     # Add edges
+    graph.add_edge("optimize_prompt", "gather_context")
     graph.add_edge("gather_context", "detect_intent")
     
     # Conditional routing based on intent
@@ -685,6 +764,7 @@ async def orchestrate(
     # Build initial state
     initial_state: OrchestratorState = {
         "transcript": transcript,
+        "optimized_transcript": "",  # Will be filled by optimize_prompt_node
         "file_path": file_path,
         "file_content": file_content,
         "cursor_line": cursor_line,
@@ -698,6 +778,7 @@ async def orchestrate(
         "assembled_context": None,
         "chat_history": None,
         "memories": None,
+        "prompt_optimization": None,  # Will be filled by optimize_prompt_node
         "result": None,
         "response_text": "",
         "error": None,
@@ -782,6 +863,7 @@ async def orchestrate(
             "result": final_state.get("result"),
             "response_text": final_state.get("response_text", ""),
             "error": final_state.get("error"),
+            "prompt_optimization": final_state.get("prompt_optimization"),  # Include optimization details
         }
     except Exception as e:
         logger.error(f"Orchestrator failed: {e}")
@@ -790,4 +872,5 @@ async def orchestrate(
             "result": None,
             "response_text": "Something went wrong. Please try again.",
             "error": str(e),
+            "prompt_optimization": None,
         }

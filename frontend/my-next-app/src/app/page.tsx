@@ -442,10 +442,171 @@ const SenoritaLogo = ({ size = 120, dim = false }: { size?: number; dim?: boolea
 );
 
 /* ============================================================
+   SIGN-IN MODAL
+   ============================================================ */
+const SignInModal = ({ onClose }: { onClose: () => void }): React.ReactElement => {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const allFilled = name.trim() !== "" && email.trim() !== "" && password.trim() !== "";
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!allFilled) return;
+    setSubmitting(true);
+    setTimeout(() => { window.location.href = "/editor"; }, 800);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", background: "#0C0F18", border: "1px solid #1A2033",
+    borderRadius: 8, padding: "10px 14px", color: "#EEF4FF",
+    fontSize: "0.88rem", fontFamily: "'DM Sans', sans-serif",
+    outline: "none", transition: "border-color 0.2s",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <>
+      <style>{`
+        @keyframes siBackdrop {
+          from { opacity: 0; backdrop-filter: blur(0px); }
+          to   { opacity: 1; backdrop-filter: blur(8px); }
+        }
+        @keyframes siModal {
+          from { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.97); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+      `}</style>
+
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(7,9,14,0.72)", backdropFilter: "blur(8px)",
+          animation: "siBackdrop 0.22s ease forwards",
+        }}
+      />
+
+      {/* Modal */}
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", zIndex: 201,
+        transform: "translate(-50%, -50%)",
+        width: "min(420px, 90vw)",
+        background: "#0C0F18",
+        border: "1px solid #1A2033",
+        borderRadius: 16,
+        padding: "32px 28px 28px",
+        boxShadow: "0 0 60px rgba(0,212,232,0.08), 0 24px 48px rgba(0,0,0,0.5)",
+        animation: "siModal 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards",
+        willChange: "transform, opacity",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <SenoritaLogo size={120} />
+            </div>
+            <p style={{ color: "#5A6888", fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif", margin: 0 }}>
+              Sign in to continue to your workspace
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", border: "none", color: "#3A4560", fontSize: "1.1rem", cursor: "pointer", padding: "2px 6px", lineHeight: 1, marginTop: 4, transition: "color 0.15s" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#C8D5E8")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#3A4560")}
+          >✕</button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Name */}
+          <div>
+            <label style={{ display: "block", color: "#5A6888", fontSize: "0.75rem", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>
+              Full Name
+            </label>
+            <input
+              type="text" placeholder="Your Name" value={name}
+              onChange={e => setName(e.target.value)}
+              style={inputStyle}
+              onFocus={e => (e.currentTarget.style.borderColor = "rgba(0,212,232,0.5)")}
+              onBlur={e => (e.currentTarget.style.borderColor = "#1A2033")}
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label style={{ display: "block", color: "#5A6888", fontSize: "0.75rem", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>
+              Email
+            </label>
+            <input
+              type="email" placeholder="Email" value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={inputStyle}
+              onFocus={e => (e.currentTarget.style.borderColor = "rgba(0,212,232,0.5)")}
+              onBlur={e => (e.currentTarget.style.borderColor = "#1A2033")}
+            />
+          </div>
+
+          {/* Password */}
+          <div>
+            <label style={{ display: "block", color: "#5A6888", fontSize: "0.75rem", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>
+              Password
+            </label>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPass ? "text" : "password"} placeholder="••••••••" value={password}
+                onChange={e => setPassword(e.target.value)}
+                style={{ ...inputStyle, paddingRight: 40 }}
+                onFocus={e => (e.currentTarget.style.borderColor = "rgba(0,212,232,0.5)")}
+                onBlur={e => (e.currentTarget.style.borderColor = "#1A2033")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(v => !v)}
+                style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#3A4560", cursor: "pointer", fontSize: "0.75rem", padding: 0, lineHeight: 1 }}
+              >
+                {showPass ? "hide" : "show"}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={!allFilled || submitting}
+            style={{
+              marginTop: 6, width: "100%", padding: "12px",
+              borderRadius: 9, border: "none", cursor: allFilled && !submitting ? "pointer" : "not-allowed",
+              fontFamily: "'Syne', sans-serif", fontSize: "0.9rem", fontWeight: 700,
+              background: allFilled ? "linear-gradient(135deg, #00D4E8, #00E5A0)" : "#1A2033",
+              color: allFilled ? "#07090E" : "#2A3555",
+              transition: "all 0.2s",
+              boxShadow: allFilled ? "0 0 20px rgba(0,212,232,0.25)" : "none",
+            }}
+          >
+            {submitting ? "Signing in…" : "Sign in →"}
+          </button>
+
+          <p style={{ color: "#2A3555", fontSize: "0.75rem", textAlign: "center", fontFamily: "'DM Sans', sans-serif", margin: 0, marginTop: 4 }}>
+            No real auth · mock only · all fields required
+          </p>
+        </form>
+      </div>
+    </>
+  );
+};
+
+/* ============================================================
    NAV
    ============================================================ */
 const Nav = (): React.ReactElement => {
   const [scrolled, setScrolled] = useState<boolean>(false);
+  const [showSignIn, setShowSignIn] = useState(false);
 
   useEffect(() => {
     const handler = (): void => setScrolled(window.scrollY > 20);
@@ -454,65 +615,76 @@ const Nav = (): React.ReactElement => {
   }, []);
 
   return (
-    <nav
-      className="animate-slide-down"
-      style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        padding: "0 40px", height: 100,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: scrolled ? "rgba(7,9,14,0.85)" : "transparent",
-        backdropFilter: scrolled ? "blur(20px)" : "none",
-        borderBottom: scrolled ? "1px solid rgba(26,32,51,0.8)" : "1px solid transparent",
-        transition: "all 0.4s ease",
-      }}
-    >
-      {/* Logo */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <SenoritaLogo size={200} />
-      </div>
+    <>
+      <nav
+        className="animate-slide-down"
+        style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+          padding: "0 40px", height: 100,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: scrolled ? "rgba(7,9,14,0.85)" : "transparent",
+          backdropFilter: scrolled ? "blur(20px)" : "none",
+          borderBottom: scrolled ? "1px solid rgba(26,32,51,0.8)" : "1px solid transparent",
+          transition: "all 0.4s ease",
+        }}
+      >
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <SenoritaLogo size={200} />
+        </div>
 
-      {/* Links */}
-      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
-        {(["Features", "How it works", "Docs"] as const).map((link) => (
+        {/* Links */}
+        <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+          {(["Features", "How it works", "Docs"] as const).map((link) => (
+            <a
+              key={link}
+              href="#"
+              style={{ color: "#5A6888", fontSize: "0.875rem", fontWeight: 400, textDecoration: "none", transition: "color 0.2s", fontFamily: "'DM Sans', sans-serif" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#C8D5E8")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#5A6888")}
+            >
+              {link}
+            </a>
+          ))}
           <a
-            key={link}
-            href="#"
-            style={{ color: "#5A6888", fontSize: "0.875rem", fontWeight: 400, textDecoration: "none", transition: "color 0.2s", fontFamily: "'DM Sans', sans-serif" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#C8D5E8")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#5A6888")}
+            href="/copilot"
+            style={{ color: "#00D4E8", fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", transition: "color 0.2s", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 5 }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00FFFF")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00D4E8")}
           >
-            {link}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Copilot
           </a>
-        ))}
-        <a
-          href="/copilot"
-          style={{ color: "#00D4E8", fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", transition: "color 0.2s", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 5 }}
-          onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00FFFF")}
-          onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00D4E8")}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Copilot
-        </a>
-      </div>
+        </div>
 
-      {/* CTA */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <span style={{ color: "#3A4560", fontSize: "0.875rem", cursor: "none" }}>Sign in</span>
-        <a href="/dashboard" style={{ textDecoration: "none" }}>
-          <button style={{ padding: "10px 22px", fontSize: "0.82rem", background: "transparent", border: "1px solid #3A5070", borderRadius: 8, color: "#C8D5E8", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#00D4E8"; e.currentTarget.style.color = "#00D4E8"; }}
-            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#3A5070"; e.currentTarget.style.color = "#C8D5E8"; }}
+        {/* CTA */}
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <span
+            onClick={() => setShowSignIn(true)}
+            style={{ color: "#8A9BB8", fontSize: "0.875rem", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "color 0.2s" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLSpanElement>) => (e.currentTarget.style.color = "#00D4E8")}
+            onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => (e.currentTarget.style.color = "#8A9BB8")}
           >
-            Dashboard
-          </button>
-        </a>
-        <a href="/editor" style={{ textDecoration: "none" }}>
-          <button className="btn-primary" style={{ padding: "10px 22px", fontSize: "0.82rem" }}>
-            Open IDE →
-          </button>
-        </a>
-      </div>
-    </nav>
+            Sign in
+          </span>
+          <a href="/dashboard" style={{ textDecoration: "none" }}>
+            <button style={{ padding: "10px 22px", fontSize: "0.82rem", background: "transparent", border: "1px solid #3A5070", borderRadius: 8, color: "#C8D5E8", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#00D4E8"; e.currentTarget.style.color = "#00D4E8"; }}
+              onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.borderColor = "#3A5070"; e.currentTarget.style.color = "#C8D5E8"; }}
+            >
+              Dashboard
+            </button>
+          </a>
+          <a href="/editor" style={{ textDecoration: "none" }}>
+            <button className="btn-primary" style={{ padding: "10px 22px", fontSize: "0.82rem" }}>
+              Open IDE →
+            </button>
+          </a>
+        </div>
+      </nav>
+
+      {showSignIn && <SignInModal onClose={() => setShowSignIn(false)} />}
+    </>
   );
 };
 

@@ -8,18 +8,41 @@ Instead of simple keyword matching, this service:
 4. Returns only truly relevant files for the query
 
 This powers the "referenced files" feature in the chat UI.
+
+IMPORTANT: Works both with file registry (frontend-populated) AND direct filesystem access.
 """
 import os
 import re
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 import hashlib
 
 from app.services.file_registry import get_file_registry, RegisteredFile
 
 logger = logging.getLogger(__name__)
+
+# Default project root - can be overridden via API or environment variable
+_project_root: Optional[str] = None
+
+# Check environment variable on module load
+_env_project_root = os.environ.get("SENORITA_PROJECT_ROOT", "")
+if _env_project_root and os.path.isdir(_env_project_root):
+    _project_root = _env_project_root
+    logger.info(f"SmartContext: project root set from env: {_project_root}")
+
+
+def set_project_root(root: str):
+    """Set the project root for filesystem-based file discovery"""
+    global _project_root
+    _project_root = root
+    logger.info(f"SmartContext: project root set to {root}")
+
+
+def get_project_root() -> Optional[str]:
+    """Get the current project root (from API, env var, or None)"""
+    return _project_root
 
 # Lazy imports
 _embedding_service = None
@@ -276,10 +299,76 @@ def get_file_embedding(file: RegisteredFile):
     return embedding
 
 
+def _scan_project_files(project_root: str) -> List[RegisteredFile]:
+    """
+    Scan project filesystem directly to find files.
+    Used as fallback when file registry is empty.
+    """
+    files = []
+    skip_dirs = {
+        "node_modules", "__pycache__", ".git", ".venv", "venv",
+        "dist", "build", ".next", ".cache", "coverage", ".idea",
+        ".mypy_cache", ".pytest_cache", "eggs", "*.egg-info",
+    }
+    
+    # File extensions to include
+    include_exts = {
+        ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".go", ".rs",
+        ".cpp", ".c", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
+        ".kt", ".scala", ".vue", ".svelte",
+    }
+    
+    try:
+        for root, dirs, filenames in os.walk(project_root):
+            # Skip excluded directories
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith('.')]
+            
+            for filename in filenames:
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in include_exts:
+                    continue
+                
+                full_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(full_path, project_root)
+                
+                try:
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    # Detect language from extension
+                    lang_map = {
+                        ".py": "python", ".ts": "typescript", ".tsx": "typescriptreact",
+                        ".js": "javascript", ".jsx": "javascriptreact", ".java": "java",
+                        ".go": "go", ".rs": "rust", ".cpp": "cpp", ".c": "c",
+                    }
+                    language = lang_map.get(ext, "plaintext")
+                    
+                    files.append(RegisteredFile(
+                        filename=filename,
+                        path=rel_path,
+                        content=content,
+                        language=language,
+                    ))
+                except Exception as e:
+                    logger.debug(f"Could not read {full_path}: {e}")
+                    continue
+                
+                # Limit to avoid memory issues
+                if len(files) >= 500:
+                    logger.warning("SmartContext: file scan limit reached (500 files)")
+                    return files
+    except Exception as e:
+        logger.error(f"Error scanning project: {e}")
+    
+    logger.info(f"SmartContext: scanned {len(files)} files from filesystem")
+    return files
+
+
 def find_relevant_files(
     query: str,
     max_files: int = 8,
     min_score: float = 0.3,
+    project_root: Optional[str] = None,
 ) -> list[RelevantFile]:
     """
     Find files relevant to a query using semantic understanding.
@@ -290,6 +379,7 @@ def find_relevant_files(
         query: User's question or request
         max_files: Maximum number of files to return
         min_score: Minimum relevance score (0-1)
+        project_root: Optional project root for filesystem scanning
     
     Returns:
         List of RelevantFile sorted by relevance
@@ -297,9 +387,15 @@ def find_relevant_files(
     registry = get_file_registry()
     registered_files = registry.get_all()
     
+    # Fallback to filesystem scan if registry is empty
     if not registered_files:
-        logger.debug("SmartContext: no files in registry")
-        return []
+        root = project_root or _project_root
+        if root and os.path.isdir(root):
+            logger.info(f"SmartContext: registry empty, scanning filesystem at {root}")
+            registered_files = _scan_project_files(root)
+        else:
+            logger.debug("SmartContext: no files in registry and no project root")
+            return []
     
     # Understand the query
     query_info = understand_query(query)
@@ -399,16 +495,20 @@ def find_relevant_files(
 # Integration with Context Agent
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_smart_context_files(transcript: str) -> list[dict]:
+def get_smart_context_files(transcript: str, project_root: Optional[str] = None) -> list[dict]:
     """
     Get relevant files for a transcript using smart context retrieval.
     
     This replaces the simple keyword matching in context_agent.
     
+    Args:
+        transcript: User's query/transcript
+        project_root: Optional project root for filesystem scanning fallback
+    
     Returns:
-        List of {filename, path, content} dicts
+        List of {filename, path, content, score, reason, category} dicts
     """
-    relevant = find_relevant_files(transcript, max_files=8, min_score=0.25)
+    relevant = find_relevant_files(transcript, max_files=8, min_score=0.25, project_root=project_root)
     
     return [
         {

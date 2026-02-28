@@ -419,7 +419,7 @@ def detect_files_in_transcript(transcript: str, project_root: str | None = None)
     # Use smart context retrieval for better results
     try:
         from app.services.smart_context import get_smart_context_files
-        smart_results = get_smart_context_files(transcript)
+        smart_results = get_smart_context_files(transcript, project_root=project_root)
         if smart_results:
             logger.info(f"Context Agent: smart context found {len(smart_results)} relevant files")
             return smart_results
@@ -759,13 +759,17 @@ async def get_context(
     # ─────────────────────────────────────────────────────────────────────────
     referenced_files: list[ReferencedFile] = []
     if transcript:
-        # Use file registry (no project_root needed - frontend registers files)
-        detected = detect_files_in_transcript(transcript)
+        # Smart context returns files with score, reason, category
+        # Pass project_root for filesystem fallback when registry is empty
+        detected = detect_files_in_transcript(transcript, project_root=project_root)
         for f in detected:
             referenced_files.append({
                 "filename": f["filename"],
                 "path": f["path"],
                 "content": f.get("content", ""),
+                "score": f.get("score", 0.5),  # Pass through relevance score
+                "reason": f.get("reason", ""),  # Why this file is relevant
+                "category": f.get("category", "unknown"),  # File category
             })
     
     context: FileContext = {

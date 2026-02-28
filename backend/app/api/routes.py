@@ -15,6 +15,7 @@ from app.services.deepgram_tts import text_to_speech
 from app.services.code_actions import handle_action
 from app.services.n8n_service import trigger_n8n
 from app.services.file_registry import get_file_registry
+from app.services.smart_context import set_project_root, get_project_root
 from app.services.memory_service import get_memory_service
 from app.services.symbol_indexer import get_indexer
 from app.services.embedding_service import get_embedding_service
@@ -393,6 +394,50 @@ async def search_files(q: str):
             for f in results[:10]  # Limit to 10 results
         ]
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Project Root API — Set the project root for filesystem-based context retrieval
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SetProjectRootRequest(BaseModel):
+    """Request to set the project root path"""
+    path: str
+
+
+@router.post("/project/set-root")
+async def set_project_root_endpoint(request: SetProjectRootRequest):
+    """
+    Set the project root path for filesystem-based file discovery.
+    Call this when opening a project folder.
+    """
+    import os
+    path = request.path
+    
+    if not path:
+        return {"ok": False, "error": "No path provided"}
+    
+    if not os.path.isdir(path):
+        return {"ok": False, "error": f"Path does not exist: {path}"}
+    
+    set_project_root(path)
+    
+    # Also index the project for symbol search
+    try:
+        indexer = get_indexer()
+        count = indexer.index_project(path)
+        logger.info(f"Indexed {count} files from project root: {path}")
+    except Exception as e:
+        logger.warning(f"Project indexing failed: {e}")
+    
+    return {"ok": True, "path": path, "message": f"Project root set to {path}"}
+
+
+@router.get("/project/root")
+async def get_project_root_endpoint():
+    """Get the current project root path"""
+    root = get_project_root()
+    return {"ok": True, "path": root}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

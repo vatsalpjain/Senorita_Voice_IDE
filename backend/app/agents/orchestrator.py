@@ -758,6 +758,10 @@ async def orchestrate(
             if files_read:
                 await on_activity("generating", "Generating response...", files_read[:8])
         
+        # Send activity: done
+        if on_activity:
+            await on_activity("done", "Complete", [])
+        
         # Save to conversation history
         try:
             response_text = final_state.get("response_text", "")

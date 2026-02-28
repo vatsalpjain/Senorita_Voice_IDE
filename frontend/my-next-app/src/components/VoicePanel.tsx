@@ -601,6 +601,9 @@ export function VoicePanel({
                 ...newFiles.map(f => ({ name: f, tokens: 0, isEdited: false })),
               ];
             });
+          } else if (status === "done") {
+            // Clear activity when backend signals completion
+            setActivity({ status: "idle", message: "", files: [] });
           }
         },
 
@@ -683,21 +686,41 @@ export function VoicePanel({
         },
 
         onAgentComplete: (intent, result, text) => {
-          console.log("[VoicePanel] onAgentComplete:", { intent, text: text?.substring(0, 100) });
+          console.log("[VoicePanel] onAgentComplete:", { intent, text: text?.substring(0, 100), result });
+          
+          // Build final text - use text from response, or extract from result data
+          let finalText = text || "";
+          if (!finalText && result && typeof result === "object" && result !== null) {
+            // Try to extract meaningful text from result data
+            const resultObj = result as { data?: Record<string, unknown> };
+            if (resultObj.data) {
+              const data = resultObj.data;
+              finalText = (data.explanation as string) || 
+                         (data.summary as string) || 
+                         (data.message as string) || 
+                         (data.text as string) ||
+                         "Task completed.";
+            }
+          }
+          if (!finalText) {
+            finalText = "Done";
+          }
+          
           // Finalize agentic response
           setMessages(prev =>
             prev.map(m =>
               m.id === streamBubbleId.current
-                ? { ...m, text: text || "Done", intent, isStreaming: false }
+                ? { ...m, text: finalText, intent, isStreaming: false }
                 : m
             )
           );
           setIsProcessing(false);
+          setActivity({ status: "idle", message: "", files: [] }); // Clear activity state
           streamBubbleId.current = null;
 
           // Auto-speak via Web Speech TTS
-          if (tts.autoSpeak && tts.isSupported && text) {
-            tts.speak(text);
+          if (tts.autoSpeak && tts.isSupported && finalText) {
+            tts.speak(finalText);
           }
         },
       });

@@ -1,0 +1,55 @@
+{
+  "id": "03ca7c01a352",
+  "title": "New Conversation",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Tell me about all the agents that are present and which files handles all orchestration?",
+      "timestamp": "2026-02-28T09:56:19.313807",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "coding_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The agents present in the project are: Coding Agent, Context Agent, Debug Agent, Workflow Agent, and Planning Agent. The file that handles all the orchestration is `orchestrator.py`, which is responsible for routing voice commands to the appropriate agents. The `orchestrator.py` file uses a LangGraph-based state machine to manage the flow of context and intents between the different agents.",
+      "timestamp": "2026-02-28T09:56:19.315130",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Can you tell me more about the coding agent in detail?",
+      "timestamp": "2026-02-28T09:57:11.981023",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "orchestrator.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The coding agent is defined in `coding_agent.py` and handles code generation, insertion, editing, and refactoring. It takes a user's voice command and file context, and returns a structured code action. The `coding_agent` function builds a prompt with relevant context and calls the LLM with a coding-specific system prompt. The response is then parsed into a `CodeAction` dict, which contains a list of edits and an explanation. The agent supports multi-file edits and follows guidelines for generating clean, production-ready code.",
+      "timestamp": "2026-02-28T09:57:11.984361",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Can You Tell me about all the agents being used, Research and find all the agents and their work",
+      "timestamp": "2026-02-28T10:14:08.812748",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "coding_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "There are several agents being used in the project, including the Context Agent, Coding Agent, Debug Agent, Workflow Agent, and Planning Agent. \n\nThe `coding_agent.py` file contains the Coding Agent, which handles code generation, insertion, editing, and refactoring. \n\nThe `orchestrator.py` file contains the Orchestrator, which routes voice commands to the appropriate agents. \n\nOther agents, such as the Debug Agent, Workflow Agent, and Planning Agent, are also mentioned in the `orchestrator.py` file, but their implementations are not shown in the provided code snippets. \n\nThese agents work together to provide a comprehensive voice-powered AI IDE assistant. \n\nFor more information, you can look into the `coding_agent.py` and `orchestrator.py` files.",
+      "timestamp": "2026-02-28T10:14:08.815845",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2026-02-28T09:56:19.248755",
+  "updated_at": "2026-02-28T10:14:08.815862",
+  "project_root": "",
+  "metadata": {}
+}

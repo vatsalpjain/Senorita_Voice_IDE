@@ -5,6 +5,8 @@ import { useVoice } from "../hooks/useVoice";
 import { useTTS } from "../hooks/useTTS";
 import { useWakeWord } from "../hooks/useWakeWord";
 import { useWebSocket, WSMessage } from "../hooks/useWebSocket";
+import { useConversations, ConversationMessage } from "../hooks/useConversations";
+import { ConversationSidebar } from "./ConversationSidebar";
 import {
   EditorContext,
   AICommandResponse,
@@ -407,7 +409,27 @@ export function VoicePanel({
   onModeChange,
   onOpenFile,
 }: VoicePanelProps): React.ReactElement {
-  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  // Conversation management with localStorage persistence
+  const conversations = useConversations();
+  const [showConversationList, setShowConversationList] = useState(false);
+  
+  // Map ConversationMessage to ChatMessage for compatibility
+  const messages: ChatMessage[] = conversations.messages.map(m => ({
+    ...m,
+    timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp),
+  }));
+  
+  const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    if (typeof updater === "function") {
+      conversations.setMessages((prev: ConversationMessage[]) => {
+        const mapped = prev.map(m => ({ ...m, timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp) }));
+        return updater(mapped as ChatMessage[]);
+      });
+    } else {
+      conversations.setMessages(updater);
+    }
+  }, [conversations]);
+  
   const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -611,13 +633,15 @@ export function VoicePanel({
         onIntent: (intent) => {
           console.log("[VoicePanel] onIntent:", intent);
           setActivity({ status: "thinking", message: `Processing ${intent}...`, files: [] });
-          // Create streaming bubble for agentic response
+          // Create streaming bubble for agentic response - start with empty text
+          // The actual text will be filled by onExplanation or onAgentComplete
           const bubbleId = `a-${Date.now()}`;
           streamBubbleId.current = bubbleId;
+          streamChunks.current = [];
           const streamingMsg: ChatMessage = {
             id: bubbleId,
             role: "assistant",
-            text: `Processing ${intent} request...`,
+            text: "",  // Start empty - will be filled by subsequent callbacks
             code: null,
             intent,
             isStreaming: true,
@@ -685,7 +709,7 @@ export function VoicePanel({
           }
         },
 
-        onAgentComplete: (intent, result, text) => {
+        onAgentComplete: async (intent, result, text) => {
           console.log("[VoicePanel] onAgentComplete:", { intent, text: text?.substring(0, 100), result });
           
           // Build final text - use text from response, or extract from result data
@@ -699,11 +723,35 @@ export function VoicePanel({
                          (data.summary as string) || 
                          (data.message as string) || 
                          (data.text as string) ||
-                         "Task completed.";
+                         (data.response as string) ||
+                         "";
             }
           }
+          
+          // If still no text, make a summarization API call
           if (!finalText) {
-            finalText = "Done";
+            console.log("[VoicePanel] No response text, making summary call...");
+            try {
+              const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+              const summaryRes = await fetch(`${API_BASE}/api/summarize-result`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  intent,
+                  result: result,
+                  context: editorContext.filename || "code",
+                }),
+              });
+              if (summaryRes.ok) {
+                const summaryData = await summaryRes.json();
+                finalText = summaryData.summary || summaryData.text || "Task completed.";
+              } else {
+                finalText = `Completed ${intent} task.`;
+              }
+            } catch (err) {
+              console.error("[VoicePanel] Summary call failed:", err);
+              finalText = `Completed ${intent} task.`;
+            }
           }
           
           // Finalize agentic response
@@ -906,6 +954,58 @@ export function VoicePanel({
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* New conversation button */}
+            <button
+              onClick={() => conversations.createConversation(editorContext.projectRoot)}
+              title="New conversation"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22,
+                background: "rgba(0,212,232,0.08)",
+                border: "1px solid rgba(0,212,232,0.2)",
+                borderRadius: 4, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,212,232,0.15)"; e.currentTarget.style.borderColor = "rgba(0,212,232,0.35)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,212,232,0.08)"; e.currentTarget.style.borderColor = "rgba(0,212,232,0.2)"; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#00D4E8" strokeWidth="1.6" strokeLinecap="round">
+                <line x1="6" y1="2" x2="6" y2="10" />
+                <line x1="2" y1="6" x2="10" y2="6" />
+              </svg>
+            </button>
+            
+            {/* History button */}
+            <button
+              onClick={() => setShowConversationList(true)}
+              title="Conversation history"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22,
+                background: showConversationList ? "rgba(139,92,246,0.15)" : "transparent",
+                border: `1px solid ${showConversationList ? "rgba(139,92,246,0.3)" : "#1A2033"}`,
+                borderRadius: 4, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.12)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.25)"; }}
+              onMouseLeave={e => { if (!showConversationList) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "#1A2033"; }}}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={showConversationList ? "#A78BFA" : "#5A6888"} strokeWidth="1.3" strokeLinecap="round">
+                <circle cx="6" cy="6" r="4.5" />
+                <polyline points="6,3.5 6,6 8,7" />
+              </svg>
+            </button>
+            
+            {/* Conversation count badge */}
+            {conversations.conversations.length > 0 && (
+              <span style={{
+                fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
+                color: "#3A4560", marginLeft: -4,
+              }}>
+                {conversations.conversations.length}
+              </span>
+            )}
+            
             {/* Summarize button */}
             {messages.filter(m => m.role !== "error").length > 0 && (
               <button
@@ -1309,6 +1409,24 @@ export function VoicePanel({
           </div>
         </div>
       </div>
+      
+      {/* Conversation Sidebar */}
+      <ConversationSidebar
+        conversations={conversations.conversations}
+        activeId={conversations.activeId}
+        onSelect={(id) => {
+          conversations.switchConversation(id);
+          setShowConversationList(false);
+        }}
+        onNew={() => {
+          conversations.createConversation(editorContext.projectRoot);
+          setShowConversationList(false);
+        }}
+        onDelete={conversations.deleteConversation}
+        onRename={conversations.renameConversation}
+        isOpen={showConversationList}
+        onClose={() => setShowConversationList(false)}
+      />
     </>
   );
 }

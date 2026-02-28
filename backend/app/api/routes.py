@@ -844,3 +844,84 @@ async def expand_search_query(q: str):
         "original": q,
         "expanded": expanded,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESULT SUMMARIZATION ENDPOINT
+# ─────────────────────────────────────────────────────────────────────────────
+class SummarizeResultRequest(BaseModel):
+    intent: str
+    result: dict | None = None
+    context: str = ""
+
+
+@router.post("/summarize-result")
+async def summarize_result(request: SummarizeResultRequest):
+    """
+    Summarize an agent result when the response text is empty.
+    This generates a human-readable summary of what the agent did.
+    """
+    intent = request.intent
+    result = request.result or {}
+    context = request.context
+    
+    # Try to extract meaningful info from the result
+    data = result.get("data", {}) if isinstance(result, dict) else {}
+    result_type = result.get("type", "") if isinstance(result, dict) else ""
+    
+    # Build summary based on intent and result type
+    summary = ""
+    
+    if result_type == "code_action":
+        edits = data.get("edits", [])
+        if edits:
+            edit_count = len(edits)
+            files = [e.get("file_path", "").split("/")[-1].split("\\")[-1] for e in edits if e.get("file_path")]
+            if files:
+                summary = f"Made {edit_count} code change{'s' if edit_count > 1 else ''} to {', '.join(set(files))}."
+            else:
+                summary = f"Generated {edit_count} code change{'s' if edit_count > 1 else ''}."
+        else:
+            summary = data.get("explanation", "Code changes applied.")
+            
+    elif result_type == "debug_result":
+        bugs = data.get("bugs", [])
+        if bugs:
+            summary = f"Found {len(bugs)} issue{'s' if len(bugs) > 1 else ''}: {data.get('summary', '')}"
+        else:
+            summary = "No issues found in the code."
+            
+    elif result_type == "explanation" or result_type == "chat":
+        summary = data.get("text", "") or data.get("explanation", "") or data.get("response", "")
+        
+    elif result_type == "plan_result":
+        steps = data.get("total_steps", 0)
+        summary = f"Created a plan with {steps} step{'s' if steps != 1 else ''}."
+        
+    elif result_type == "workflow_result":
+        summary = data.get("message", "Workflow triggered successfully.")
+        
+    else:
+        # Generic fallback based on intent
+        intent_summaries = {
+            "chat": "Processed your request.",
+            "explain": f"Analyzed {context or 'the code'}.",
+            "generate": "Generated the requested code.",
+            "refactor": "Refactored the code.",
+            "fix": "Applied bug fixes.",
+            "debug": "Analyzed for issues.",
+            "test": "Generated tests.",
+            "document": "Added documentation.",
+            "plan": "Created an execution plan.",
+        }
+        summary = intent_summaries.get(intent, f"Completed {intent} task.")
+    
+    # If we still have no summary, use a generic one
+    if not summary:
+        summary = f"Completed {intent} task successfully."
+    
+    return {
+        "ok": True,
+        "summary": summary,
+        "intent": intent,
+    }

@@ -1,0 +1,40 @@
+{
+  "id": "7c94e59ac03d",
+  "title": "New Conversation",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can You Tell me about all the agents and what do they do",
+      "timestamp": "2026-02-28T10:29:07.113969",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "coding_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "There are several agents in the project: \n1. **Context Agent**: Provides enriched context for the coding agent, including file path, cursor position, and selected code.\n2. **Coding Agent** (in `coding_agent.py`): Handles code generation, insertion, editing, and refactoring based on user voice commands.\n3. **Debug Agent** (in `debug_agent.py`): Handles debugging tasks, such as fixing errors and debugging code.\n4. **Workflow Agent** (in `workflow_agent.py`): Manages workflows and tasks related to coding, such as creating and managing projects.\n5. **Planning Agent** (in `planning_agent.py`): Plans and coordinates complex tasks, such as breaking down large tasks into smaller ones.\n6. **Orchestrator** (in `orchestrator.py`): Routes voice commands to the appropriate agents and manages the overall workflow.",
+      "timestamp": "2026-02-28T10:29:07.116222",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Can You Tell me about all the agents and what do they do",
+      "timestamp": "2026-02-28T10:38:57.797364",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "orchestrator.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "In `orchestrator.py`, there are several agents mentioned, including the Context Agent, Coding Agent, Debug Agent, Workflow Agent, and Planning Agent. Each agent has a specific role: \n- The Context Agent gathers enriched context, \n- the Coding Agent handles code generation and editing, \n- the Debug Agent handles debugging, \n- the Workflow Agent handles workflow-related tasks, and \n- the Planning Agent handles planning for complex tasks. \nThese agents are used in the `build_orchestrator_graph` function in `orchestrator.py` to route voice commands to the appropriate agent.",
+      "timestamp": "2026-02-28T10:38:57.799187",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2026-02-28T10:29:07.112417",
+  "updated_at": "2026-02-28T10:38:57.799202",
+  "project_root": "",
+  "metadata": {}
+}

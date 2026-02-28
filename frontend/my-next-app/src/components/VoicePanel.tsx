@@ -419,16 +419,18 @@ export function VoicePanel({
     timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp),
   }));
   
+  // Stable reference to setMessages from conversations hook
+  const conversationSetMessages = conversations.setMessages;
   const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     if (typeof updater === "function") {
-      conversations.setMessages((prev: ConversationMessage[]) => {
+      conversationSetMessages((prev: ConversationMessage[]) => {
         const mapped = prev.map(m => ({ ...m, timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp) }));
         return updater(mapped as ChatMessage[]);
       });
     } else {
-      conversations.setMessages(updater);
+      conversationSetMessages(updater);
     }
-  }, [conversations]);
+  }, [conversationSetMessages]);
   
   const [textInput, setTextInput]       = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -687,16 +689,18 @@ export function VoicePanel({
 
         onExplanation: (data) => {
           const text = data?.text || "";
-          console.log("[VoicePanel] onExplanation:", text?.substring(0, 100));
-          // Update streaming bubble with explanation text (don't finalize yet - wait for response_complete)
-          if (streamBubbleId.current) {
-            setMessages(prev =>
-              prev.map(m =>
-                m.id === streamBubbleId.current
-                  ? { ...m, text: text || "Processing..." }
+          console.log("[VoicePanel] onExplanation:", { textLen: text?.length, text: text?.substring(0, 200), bubbleId: streamBubbleId.current });
+          // Update streaming bubble with explanation text
+          if (streamBubbleId.current && text) {
+            const bubbleId = streamBubbleId.current;
+            setMessages(prev => {
+              console.log("[VoicePanel] Updating bubble", bubbleId, "with text length:", text.length);
+              return prev.map(m =>
+                m.id === bubbleId
+                  ? { ...m, text: text }
                   : m
-              )
-            );
+              );
+            });
           }
           
           // Auto-open referenced files if any
@@ -709,13 +713,16 @@ export function VoicePanel({
           }
         },
 
-        onAgentComplete: async (intent, result, text) => {
-          console.log("[VoicePanel] onAgentComplete:", { intent, text: text?.substring(0, 100), result });
+        onAgentComplete: (intent, result, text) => {
+          // Capture bubble ID before any state updates
+          const bubbleId = streamBubbleId.current;
+          console.log("[VoicePanel] onAgentComplete:", { intent, textLen: text?.length, text: text?.substring(0, 200), bubbleId });
           
-          // Build final text - use text from response, or extract from result data
+          // Use text directly from response_complete - this is the primary source
           let finalText = text || "";
+          
+          // Fallback: extract from result data if text is empty
           if (!finalText && result && typeof result === "object" && result !== null) {
-            // Try to extract meaningful text from result data
             const resultObj = result as { data?: Record<string, unknown> };
             if (resultObj.data) {
               const data = resultObj.data;
@@ -728,40 +735,24 @@ export function VoicePanel({
             }
           }
           
-          // If still no text, make a summarization API call
+          // Final fallback
           if (!finalText) {
-            console.log("[VoicePanel] No response text, making summary call...");
-            try {
-              const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-              const summaryRes = await fetch(`${API_BASE}/api/summarize-result`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  intent,
-                  result: result,
-                  context: editorContext.filename || "code",
-                }),
-              });
-              if (summaryRes.ok) {
-                const summaryData = await summaryRes.json();
-                finalText = summaryData.summary || summaryData.text || "Task completed.";
-              } else {
-                finalText = `Completed ${intent} task.`;
-              }
-            } catch (err) {
-              console.error("[VoicePanel] Summary call failed:", err);
-              finalText = `Completed ${intent} task.`;
-            }
+            finalText = `Completed ${intent} task.`;
           }
           
-          // Finalize agentic response
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === streamBubbleId.current
-                ? { ...m, text: finalText, intent, isStreaming: false }
-                : m
-            )
-          );
+          console.log("[VoicePanel] Final text for bubble:", bubbleId, "text:", finalText.substring(0, 100));
+          
+          // Finalize agentic response - use captured bubbleId
+          if (bubbleId) {
+            setMessages(prev => {
+              console.log("[VoicePanel] onAgentComplete updating messages, looking for:", bubbleId, "in", prev.map(m => m.id));
+              return prev.map(m =>
+                m.id === bubbleId
+                  ? { ...m, text: finalText, intent, isStreaming: false }
+                  : m
+              );
+            });
+          }
           setIsProcessing(false);
           setActivity({ status: "idle", message: "", files: [] }); // Clear activity state
           streamBubbleId.current = null;

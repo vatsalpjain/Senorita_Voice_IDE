@@ -128,6 +128,12 @@ export function useConversations() {
     }
     return null;
   });
+  
+  // Keep a ref to activeId for use in callbacks that might have stale closures
+  const activeIdRef = useRef(activeId);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   // Save to localStorage when conversations change (skip first render)
   useEffect(() => {
@@ -203,9 +209,14 @@ export function useConversations() {
   }, [activeId]);
 
   // Update messages in active conversation
+  // Uses activeIdRef to avoid stale closure issues with WebSocket callbacks
   const setMessages = useCallback((messages: ConversationMessage[] | ((prev: ConversationMessage[]) => ConversationMessage[])) => {
-    if (!activeId) {
+    const currentActiveId = activeIdRef.current;
+    console.log("[useConversations] setMessages called, activeId:", currentActiveId);
+    
+    if (!currentActiveId) {
       // Auto-create a conversation if none exists
+      console.log("[useConversations] No activeId, creating new conversation");
       const newConv = createConversation();
       setConversations(prev => prev.map(c => 
         c.id === newConv.id 
@@ -220,18 +231,22 @@ export function useConversations() {
       return;
     }
     
-    setConversations(prev => prev.map(c => {
-      if (c.id !== activeId) return c;
-      
-      const newMessages = typeof messages === "function" ? messages(c.messages) : messages;
-      return {
-        ...c,
-        messages: newMessages,
-        updatedAt: new Date(),
-        title: c.messages.length === 0 ? generateTitle(newMessages) : c.title,
-      };
-    }));
-  }, [activeId, createConversation]);
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id !== currentActiveId) return c;
+        
+        const newMessages = typeof messages === "function" ? messages(c.messages) : messages;
+        console.log("[useConversations] Updating conversation", currentActiveId, "messages count:", newMessages.length);
+        return {
+          ...c,
+          messages: newMessages,
+          updatedAt: new Date(),
+          title: c.messages.length === 0 ? generateTitle(newMessages) : c.title,
+        };
+      });
+      return updated;
+    });
+  }, [createConversation]);
 
   // Get messages from active conversation
   const messages = activeConversation?.messages || [];

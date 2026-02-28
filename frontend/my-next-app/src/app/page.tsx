@@ -484,6 +484,15 @@ const Nav = (): React.ReactElement => {
             {link}
           </a>
         ))}
+        <a
+          href="/copilot"
+          style={{ color: "#00D4E8", fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", transition: "color 0.2s", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 5 }}
+          onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00FFFF")}
+          onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#00D4E8")}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Copilot
+        </a>
       </div>
 
       {/* CTA */}
@@ -497,9 +506,11 @@ const Nav = (): React.ReactElement => {
             Dashboard
           </button>
         </a>
-        <button className="btn-primary" style={{ padding: "10px 22px", fontSize: "0.82rem" }}>
-          Open IDE →
-        </button>
+        <a href="/editor" style={{ textDecoration: "none" }}>
+          <button className="btn-primary" style={{ padding: "10px 22px", fontSize: "0.82rem" }}>
+            Open IDE →
+          </button>
+        </a>
       </div>
     </nav>
   );

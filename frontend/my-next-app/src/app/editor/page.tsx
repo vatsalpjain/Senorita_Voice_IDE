@@ -17,6 +17,7 @@ import {
   readFileContent,
 } from "../../services/fileSystemService";
 import { registerFile, unregisterFile, registerFilesBatch, clearFileRegistry, getFileFromRegistry } from "../../services/fileRegistryService";
+import { saveWorkspace } from "../../store/workspaceStore";
 
 // Dynamic import Monaco to avoid SSR issues
 const MonacoEditor = dynamic(() => import("../../components/MonacoEditor"), {
@@ -1974,7 +1975,22 @@ export default function EditorPage(): React.ReactElement {
       isDirty: false,
     };
 
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => {
+      const next = [...prev, newTab];
+      // Update workspace store with new tab list + active file
+      import("../../store/workspaceStore").then(({ loadWorkspace, saveWorkspace }) => {
+        const ws = loadWorkspace();
+        if (ws) {
+          saveWorkspace({
+            ...ws,
+            activeFile: { name: newTab.name, path: newTab.id, language: lang },
+            openTabs: next.map(t => ({ name: t.name, path: t.id, language: t.language })),
+            updatedAt: Date.now(),
+          });
+        }
+      });
+      return next;
+    });
     setActiveTabId(node.id);
     setShowMarkdown(false);
     registerFile(node.name, node.id, content, lang);
@@ -2051,6 +2067,15 @@ export default function EditorPage(): React.ReactElement {
           await registerFilesBatch(files);
           console.log(`[handleOpenFolder] Registered ${files.length} files`);
         }
+        // Persist workspace context so Copilot page can read it
+        saveWorkspace({
+          folderName: handle.name,
+          folderPath: handle.name,
+          files: files.map(f => ({ name: f.filename, path: f.path, language: f.language })),
+          activeFile: null,
+          openTabs: [],
+          updatedAt: Date.now(),
+        });
       });
       
     } catch (err) {

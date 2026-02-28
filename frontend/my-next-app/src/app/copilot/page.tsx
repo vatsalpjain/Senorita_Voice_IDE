@@ -51,7 +51,7 @@ interface FunctionData {
 /* ============================================================
    CONSTANTS
    ============================================================ */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /* ============================================================
    GLOBAL STYLES
@@ -137,15 +137,24 @@ const CustomCursor = (): React.ReactElement => {
 };
 
 /* ============================================================
-   MERMAID DIAGRAM RENDERER
+   MERMAID DIAGRAM RENDERER  (with zoom + pan + download)
    ============================================================ */
-const MermaidDiagram = ({ definition, id }: { definition: string; id: string }): React.ReactElement => {
-  const ref = useRef<HTMLDivElement>(null);
+const MermaidDiagram = ({ definition, id, title }: { definition: string; id: string; title?: string }): React.ReactElement => {
+  const svgWrapRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const dragStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
 
   useEffect(() => {
     let cancelled = false;
+    setRendered(false);
+    setError(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
     const render = async () => {
       try {
         const mermaid = (await import("mermaid")).default;
@@ -165,8 +174,14 @@ const MermaidDiagram = ({ definition, id }: { definition: string; id: string }):
         });
         const uniqueId = `mermaid-${id}-${Math.random().toString(36).slice(2)}`;
         const { svg } = await mermaid.render(uniqueId, definition);
-        if (!cancelled && ref.current) {
-          ref.current.innerHTML = svg;
+        if (!cancelled && svgWrapRef.current) {
+          svgWrapRef.current.innerHTML = svg;
+          const svgEl = svgWrapRef.current.querySelector("svg");
+          if (svgEl) {
+            svgEl.style.maxWidth = "none";
+            svgEl.style.width = "100%";
+            svgEl.style.height = "auto";
+          }
           setRendered(true);
         }
       } catch (e) {
@@ -177,6 +192,87 @@ const MermaidDiagram = ({ definition, id }: { definition: string; id: string }):
     return () => { cancelled = true; };
   }, [definition, id]);
 
+  /* ── Wheel zoom ── */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(z => Math.min(6, Math.max(0.2, z - e.deltaY * 0.001)));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [rendered]);
+
+  /* ── Drag pan ── */
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true;
+    dragStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+  };
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      setPan({ x: dragStart.current.px + e.clientX - dragStart.current.mx, y: dragStart.current.py + e.clientY - dragStart.current.my });
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  /* ── Download SVG ── */
+  const downloadSvg = () => {
+    const svgEl = svgWrapRef.current?.querySelector("svg");
+    if (!svgEl) return;
+    const blob = new Blob([svgEl.outerHTML], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(title ?? id).replace(/\s+/g, "-").toLowerCase()}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /* ── Download PNG ── */
+  const downloadPng = () => {
+    const svgEl = svgWrapRef.current?.querySelector("svg");
+    if (!svgEl) return;
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const canvas = document.createElement("canvas");
+    const scale = 2;
+    const bbox = svgEl.getBoundingClientRect();
+    canvas.width = bbox.width * scale;
+    canvas.height = bbox.height * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#0A0D16";
+    ctx.fillRect(0, 0, bbox.width, bbox.height);
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, bbox.width, bbox.height);
+      const a = document.createElement("a");
+      a.download = `${(title ?? id).replace(/\s+/g, "-").toLowerCase()}.png`;
+      a.href = canvas.toDataURL("image/png");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  };
+
+  const zoomBtnStyle = (active?: boolean): React.CSSProperties => ({
+    display: "flex", alignItems: "center", justifyContent: "center",
+    width: 28, height: 28, borderRadius: 6,
+    background: active ? "rgba(0,212,232,0.12)" : "rgba(255,255,255,0.03)",
+    border: `1px solid ${active ? "rgba(0,212,232,0.3)" : "#1A2033"}`,
+    color: active ? "#00D4E8" : "#5A6888",
+    cursor: "pointer", transition: "all 0.15s", fontSize: "0.75rem",
+    fontFamily: "'JetBrains Mono', monospace", flexShrink: 0,
+  });
+
   if (error) {
     return (
       <div style={{ padding: 20, color: "#FF5F57", fontSize: "0.8rem", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -186,13 +282,67 @@ const MermaidDiagram = ({ definition, id }: { definition: string; id: string }):
   }
 
   return (
-    <div
-      ref={ref}
-      className="mermaid-container"
-      style={{ padding: "20px 16px", opacity: rendered ? 1 : 0, transition: "opacity 0.4s ease", display: "flex", justifyContent: "center", overflowX: "auto" }}
-    >
-      <div style={{ color: "#2A3555", fontSize: "0.8rem", fontFamily: "'JetBrains Mono', monospace", padding: 20 }}>
-        Rendering diagram...
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* ── Toolbar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid #0F1420", background: "#060810", flexShrink: 0, flexWrap: "wrap" }}>
+        {/* Zoom controls */}
+        <button style={zoomBtnStyle()} onClick={() => setZoom(z => Math.min(6, z + 0.25))} title="Zoom in">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button style={zoomBtnStyle()} onClick={() => setZoom(z => Math.max(0.2, z - 0.25))} title="Zoom out">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button style={zoomBtnStyle()} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} title="Reset view">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+        <span style={{ color: "#2A3555", fontSize: "0.68rem", fontFamily: "'JetBrains Mono', monospace", minWidth: 36, textAlign: "center" }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <div style={{ flex: 1 }} />
+        {/* Download buttons */}
+        <button style={{ ...zoomBtnStyle(), width: "auto", padding: "0 10px", gap: 5 }} onClick={downloadSvg} title="Download as SVG">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span style={{ fontSize: "0.7rem" }}>SVG</span>
+        </button>
+        <button style={{ ...zoomBtnStyle(), width: "auto", padding: "0 10px", gap: 5, color: "#00D4E8", borderColor: "rgba(0,212,232,0.2)", background: "rgba(0,212,232,0.06)" }} onClick={downloadPng} title="Download as PNG">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span style={{ fontSize: "0.7rem" }}>PNG</span>
+        </button>
+      </div>
+
+      {/* ── Diagram viewport ── */}
+      <div
+        ref={containerRef}
+        onMouseDown={onMouseDown}
+        style={{
+          flex: 1, minHeight: 280, overflow: "hidden", position: "relative",
+          cursor: dragging.current ? "grabbing" : "grab",
+          background: "#0A0D16",
+          userSelect: "none",
+        }}
+      >
+        {!rendered && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#2A3555", fontSize: "0.8rem", fontFamily: "'JetBrains Mono', monospace" }}>
+            Rendering diagram...
+          </div>
+        )}
+        <div
+          ref={svgWrapRef}
+          style={{
+            display: "inline-block",
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "center center",
+            transition: dragging.current ? "none" : "transform 0.05s ease",
+            padding: "20px 16px",
+            opacity: rendered ? 1 : 0,
+            minWidth: "100%",
+          }}
+        />
+      </div>
+
+      {/* Hint */}
+      <div style={{ padding: "4px 12px 6px", background: "#060810", borderTop: "1px solid #0F1420", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "#1A2533", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace" }}>scroll to zoom · drag to pan</span>
       </div>
     </div>
   );
@@ -207,6 +357,7 @@ const DiagramPanel = ({ diagrams }: { diagrams: DiagramData[] }): React.ReactEle
 
   return (
     <div style={{ border: "1px solid #1A2033", borderRadius: 12, overflow: "hidden", background: "#0A0D16" }}>
+      {/* Tab bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "10px 14px", background: "#060810", borderBottom: "1px solid #0F1420", overflowX: "auto" }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3A4560" strokeWidth="2" style={{ flexShrink: 0, marginRight: 4 }}>
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -217,14 +368,8 @@ const DiagramPanel = ({ diagrams }: { diagrams: DiagramData[] }): React.ReactEle
           </button>
         ))}
       </div>
-      <div style={{ minHeight: 280 }}>
-        <MermaidDiagram key={active.id} definition={active.definition} id={active.id} />
-      </div>
-      <div style={{ padding: "8px 16px", background: "#060810", borderTop: "1px solid #0F1420", display: "flex", alignItems: "center", gap: 6 }}>
-        <span className="font-mono" style={{ color: "#2A3555", fontSize: "0.7rem" }}>{active.type}</span>
-        <span style={{ color: "#1A2033" }}>·</span>
-        <span className="font-mono" style={{ color: "#2A3555", fontSize: "0.7rem" }}>auto-generated by Señorita AI</span>
-      </div>
+      {/* Diagram with built-in toolbar */}
+      <MermaidDiagram key={active.id} definition={active.definition} id={active.id} title={active.title} />
     </div>
   );
 };
@@ -600,7 +745,7 @@ export default function CopilotPage(): React.ReactElement {
 
       } else {
         /* Backend error — show message but still show file context if available */
-        responseText = `Backend returned ${res.status}. Make sure the backend is running at ${API_BASE}.`;
+        responseText = `Backend returned ${res.status}. Make sure the backend is running at http://localhost:8000.`;
         if (workspace?.files.length) {
           filesReferenced = workspace.files.map(f => f.path);
         }
@@ -625,7 +770,7 @@ export default function CopilotPage(): React.ReactElement {
       setMessages((prev) => [...prev, {
         id: `a-${Date.now()}`,
         role: "assistant",
-        content: `Could not reach backend (${errMsg}). Make sure the backend is running at ${API_BASE}.\n\n${workspace ? `Your workspace "${workspace.folderName}" has ${workspace.files.length} files loaded — the backend just needs to be started to analyse them.` : "No workspace loaded yet — open a folder in the Editor first."}`,
+        content: `Could not reach backend (${errMsg}). Make sure the backend is running at http://localhost:8000.\n\n${workspace ? `Your workspace "${workspace.folderName}" has ${workspace.files.length} files loaded — the backend just needs to be started to analyse them.` : "No workspace loaded yet — open a folder in the Editor first."}`,
         timestamp: new Date(),
         filesReferenced: fallbackFiles?.length ? fallbackFiles : undefined,
       }]);

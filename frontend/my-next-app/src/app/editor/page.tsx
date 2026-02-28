@@ -505,12 +505,12 @@ function highlightCode(code: string, language: string): React.ReactElement[] {
    BOOT ANIMATION
    ============================================================ */
 const BOOT_PHASES: BootPhase[] = [
-  { label: "Initializing workspace...",        duration: 500  },
-  { label: "Loading virtual file system...",   duration: 700  },
-  { label: "Starting Monaco Engine...",        duration: 600  },
-  { label: "Connecting AI pipeline...",        duration: 500  },
-  { label: "Calibrating voice interface...",   duration: 400  },
-  { label: "Ready.",                           duration: 300  },
+  { label: "Initializing workspace...",        duration: 250  },
+  { label: "Loading virtual file system...",   duration: 350  },
+  { label: "Starting Monaco Engine...",        duration: 300  },
+  { label: "Connecting AI pipeline...",        duration: 250  },
+  { label: "Calibrating voice interface...",   duration: 200  },
+  { label: "Ready.",                           duration: 150  },
 ];
 
 interface BootScreenProps {
@@ -543,9 +543,9 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
       }
       // Expand animation
       setExpanding(true);
-      await new Promise<void>((res) => setTimeout(res, 800));
+      await new Promise<void>((res) => setTimeout(res, 400));
       setDone(true);
-      await new Promise<void>((res) => setTimeout(res, 200));
+      await new Promise<void>((res) => setTimeout(res, 100));
       onComplete();
     };
 
@@ -577,29 +577,29 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
 
       {/* Central orb */}
       <div style={{
-        position: "relative", marginBottom: "-60px",
+        position: "relative", marginBottom: 24,
         animation: "bootPulse 2s ease-in-out infinite",
         zIndex: 2,
       }}>
         <img
           src="/logo3.png"
           alt="Senorita"
-          style={{ width: 500, height: "auto", objectFit: "contain", display: "block", mixBlendMode: "screen" }}
+          style={{ width: 340, height: "auto", objectFit: "contain", display: "block", mixBlendMode: "screen" }}
         />
       </div>
 
       {/* Voice waveform */}
-      <div style={{ display: "flex", alignItems: "center", gap: 3, height: "70vh", width: "90vw", justifyContent: "center", marginBottom: 32, zIndex: 1 }}>
-        {[0.55,0.8,1,0.75,0.95,1,0.65,0.9,0.7,1,0.85,0.55,0.95,0.75,1,0.9,0.6,0.85,1,0.5,0.75,0.95,0.8,1,0.65,0.9,0.7,0.55,1,0.85,0.6,0.95,0.7,1,0.9,0.55,0.8,1,0.7,0.95,0.6,0.85,0.75,1,0.7,0.55,0.9,0.8,0.6,1,0.75,0.9,0.55,0.8,1,0.65,0.95,0.7,0.85,1].map((h, i) => (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, height: 90, width: 500, justifyContent: "center", marginBottom: 24, zIndex: 1 }}>
+        {[0.4,0.65,0.85,0.95,0.75,0.9,1,0.7,0.85,0.6,0.9,0.8,0.95,1,0.7,0.85,0.6,0.95,0.75,0.9,1,0.65,0.85,0.7,0.95].map((h, i) => (
           <div key={i} style={{
             flex: 1,
-            maxWidth: 5,
-            minWidth: 2,
+            maxWidth: 6,
+            minWidth: 3,
             height: `${h * 100}%`,
             borderRadius: 99,
-            background: `linear-gradient(180deg, #00FFFF 0%, #00D4E8 35%, #4DD9E8 65%, rgba(0,212,232,0.12) 100%)`,
-            boxShadow: `0 0 8px rgba(0,212,232,0.8), 0 0 20px rgba(0,212,232,0.35)`,
-            animation: `bootWaveBar 2s ease-in-out ${(i % 10) * 0.1}s infinite`,
+            background: `linear-gradient(180deg, #00FFFF 0%, #00D4E8 40%, rgba(0,212,232,0.15) 100%)`,
+            boxShadow: `0 0 7px rgba(0,212,232,0.6), 0 0 16px rgba(0,212,232,0.2)`,
+            animation: `bootWaveBar 1.5s ease-in-out ${i * 0.08}s infinite`,
             transformOrigin: "center",
           }} />
         ))}
@@ -655,12 +655,12 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
 
       <style>{`
         @keyframes bootWaveBar {
-          0%,100% { transform: scaleY(0.15); opacity: 0.4; }
-          50%     { transform: scaleY(1); opacity: 1; }
+          0%,100% { transform: scaleY(0.2); opacity: 0.35; }
+          50%     { transform: scaleY(1); opacity: 0.85; }
         }
         @keyframes bootPulse {
           0%,100% { transform: scale(1); }
-          50% { transform: scale(1.05); }
+          50% { transform: scale(1.03); }
         }
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -1002,17 +1002,43 @@ interface ActivityBarProps {
   onPanelChange: (panel: string) => void;
 }
 
+const ACTIVITY_ICONS: Record<string, React.ReactElement> = {
+  explorer: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+  ),
+  search: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  ),
+  git: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="6" r="2.5"/>
+      <path d="M6 8.5v7M8.5 6h7"/>
+    </svg>
+  ),
+  debug: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 22 19 2 19"/>
+      <line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r="0.8" fill="currentColor"/>
+    </svg>
+  ),
+};
+
 const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.ReactElement => {
   const icons = [
-    { id: "explorer", icon: "⊞", label: "Explorer" },
-    { id: "search",   icon: "⌕", label: "Search"   },
-    { id: "git",      icon: "⎇", label: "Git"       },
-    { id: "debug",    icon: "⬡", label: "Debug"     },
+    { id: "explorer", label: "Explorer" },
+    { id: "search",   label: "Search"   },
+    { id: "git",      label: "Git"      },
+    { id: "debug",    label: "Debug"    },
   ];
 
   return (
     <div style={{
-      width: 44, background: "#080B12",
+      width: 48, background: "#080B12",
       borderRight: "1px solid #1A2033",
       display: "flex", flexDirection: "column", alignItems: "center",
       paddingTop: 8, gap: 2, flexShrink: 0,
@@ -1023,11 +1049,11 @@ const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.Re
           onClick={() => onPanelChange(ic.id)}
           title={ic.label}
           style={{
-            width: 36, height: 36,
+            width: 40, height: 40,
             display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", fontSize: "1.4rem",
-            color: activePanel === ic.id ? "#E2E8F0" : "#8A9BB8",
-            background: activePanel === ic.id ? "rgba(0,212,232,0.08)" : "transparent",
+            cursor: "pointer",
+            color: activePanel === ic.id ? "#00D4E8" : "#4A5A75",
+            background: activePanel === ic.id ? "rgba(0,212,232,0.1)" : "transparent",
             borderLeft: activePanel === ic.id ? "2px solid #00D4E8" : "2px solid transparent",
             borderRadius: activePanel === ic.id ? "0 6px 6px 0" : "6px",
             transition: "all 0.15s",
@@ -1036,10 +1062,10 @@ const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.Re
             if (activePanel !== ic.id) e.currentTarget.style.color = "#C8D5E8";
           }}
           onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (activePanel !== ic.id) e.currentTarget.style.color = "#8A9BB8";
+            if (activePanel !== ic.id) e.currentTarget.style.color = "#4A5A75";
           }}
         >
-          {ic.icon}
+          {ACTIVITY_ICONS[ic.id]}
         </div>
       ))}
 

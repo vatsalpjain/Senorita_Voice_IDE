@@ -875,6 +875,7 @@ interface CodeEditorProps {
   onRejectAction: () => void;
   onCursorChange?: (line: number) => void;
   onSelectionChange?: (selection: string) => void;
+  onSendToChat?: (code: string) => void;
 }
 
 const CodeEditorWrapper = ({
@@ -885,6 +886,7 @@ const CodeEditorWrapper = ({
   onRejectAction,
   onCursorChange,
   onSelectionChange,
+  onSendToChat,
 }: CodeEditorProps): React.ReactElement => {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#0C0F18" }}>
@@ -895,6 +897,7 @@ const CodeEditorWrapper = ({
         onChange={onContentChange}
         onCursorChange={(line) => onCursorChange?.(line)}
         onSelectionChange={(sel) => onSelectionChange?.(sel)}
+        onSendToChat={onSendToChat}
         pendingAction={pendingAction}
         onAcceptAction={onAcceptAction}
         onRejectAction={onRejectAction}
@@ -1330,9 +1333,11 @@ interface TopBarProps {
   voiceOpen: boolean;
   onVoiceToggle: () => void;
   activeMode?: AIMode;
+  terminalOpen?: boolean;
+  onTerminalToggle?: () => void;
 }
 
-const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask" }: TopBarProps): React.ReactElement => (
+const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask", terminalOpen, onTerminalToggle }: TopBarProps): React.ReactElement => (
   <div style={{
     height: 100, background: "#080B12",
     borderBottom: "1px solid #1A2033",
@@ -1352,11 +1357,12 @@ const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask" }: TopBarProps): 
     {["File", "Edit", "View", "Go", "Run", "Terminal", "Help"].map((item) => (
       <span
         key={item}
+        onClick={() => { if (item === "Terminal") onTerminalToggle?.(); }}
         style={{
           fontFamily: "'Inter', 'DM Sans', sans-serif",
           fontSize: "0.82rem",
           fontWeight: 600,
-          color: "#8A9BB8",
+          color: item === "Terminal" && terminalOpen ? "#00D4E8" : "#8A9BB8",
           cursor: "pointer",
           padding: "4px 8px",
           borderRadius: 3,
@@ -1368,7 +1374,7 @@ const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask" }: TopBarProps): 
           e.currentTarget.style.background = "#1A2033";
         }}
         onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => {
-          e.currentTarget.style.color = "#8A9BB8";
+          e.currentTarget.style.color = item === "Terminal" && terminalOpen ? "#00D4E8" : "#8A9BB8";
           e.currentTarget.style.background = "transparent";
         }}
       >
@@ -1559,6 +1565,170 @@ function countFiles(nodes: FileNode[]): number {
 }
 
 /* ============================================================
+   TERMINAL PANEL
+   ============================================================ */
+interface TerminalLine {
+  type: "input" | "output" | "error" | "info";
+  text: string;
+}
+
+const SIMULATED_COMMANDS: Record<string, string[]> = {
+  "ls": ["src/  node_modules/  public/  package.json  tsconfig.json  next.config.ts  README.md"],
+  "ls -la": ["total 48", "drwxr-xr-x  8 user staff   256 Feb 28 04:00 .", "drwxr-xr-x  3 user staff    96 Feb 28 03:00 ..", "-rw-r--r--  1 user staff  1234 Feb 28 04:00 package.json", "-rw-r--r--  1 user staff   512 Feb 28 03:00 tsconfig.json", "drwxr-xr-x 12 user staff   384 Feb 28 04:00 src", "drwxr-xr-x  4 user staff   128 Feb 28 04:00 public"],
+  "pwd": ["/Users/user/Senorita_Voice_IDE/frontend/my-next-app"],
+  "node --version": ["v20.11.0"],
+  "npm --version": ["10.2.4"],
+  "git status": ["On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  modified:   src/app/editor/page.tsx\n  modified:   src/components/VoicePanel.tsx"],
+  "git log --oneline -5": ["49254d6 Loding animation changed", "78670fc feat: add wake word detection", "3a9d1f2 fix: resolve port conflicts", "d12e45a feat: add dashboard button", "8bc3a10 initial commit"],
+  "npm run dev": ["▲ Next.js 16.1.6 (Turbopack)", "  ✓ Starting...", "  ✓ Ready in 389ms", "  - Local:   http://localhost:3000"],
+  "npm run build": ["▲ Next.js 16.1.6", "  Creating an optimized production build...", "  ✓ Compiled successfully", "  ✓ Linting and checking validity of types", "  Route (app)  Size  First Load JS", "  ┌ ○ /         142 kB  248 kB", "  └ ○ /editor   890 kB  996 kB"],
+  "cat package.json": ['{\n  "name": "my-next-app",\n  "version": "0.1.0",\n  "private": true,\n  "scripts": {\n    "dev": "next dev",\n    "build": "next build",\n    "start": "next start"\n  }\n}'],
+  "whoami": ["user"],
+  "date": [new Date().toString()],
+  "echo $PATH": ["/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"],
+  "clear": ["__CLEAR__"],
+  "help": ["Available commands: ls, pwd, git, npm, node, cat, echo, whoami, date, clear, help"],
+};
+
+function TerminalPanel({ height, onHeightChange }: { height: number; onHeightChange: (h: number) => void }): React.ReactElement {
+  const [lines, setLines] = useState<TerminalLine[]>([
+    { type: "info", text: "Senorita Terminal  —  bash  (zsh compatible)" },
+    { type: "info", text: 'Type "help" for available commands.' },
+  ]);
+  const [input, setInput] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [cwd] = useState("~/Senorita_Voice_IDE/frontend/my-next-app");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isDragging = useRef(false);
+  const dragStartY = useRef(0);
+  const dragStartH = useRef(0);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [lines]);
+
+  const handleDragMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartY.current = e.clientY;
+    dragStartH.current = height;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = dragStartY.current - e.clientY;
+      onHeightChange(Math.max(80, Math.min(600, dragStartH.current + delta)));
+    };
+    const onUp = () => { isDragging.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [onHeightChange]);
+
+  const runCommand = (cmd: string) => {
+    const trimmed = cmd.trim();
+    if (!trimmed) return;
+    setLines(prev => [...prev, { type: "input", text: trimmed }]);
+    setHistory(prev => [trimmed, ...prev]);
+    setHistoryIdx(-1);
+
+    const key = Object.keys(SIMULATED_COMMANDS).find(k => trimmed === k || trimmed.startsWith(k + " "));
+    if (key) {
+      const outputs = SIMULATED_COMMANDS[key];
+      if (outputs[0] === "__CLEAR__") { setLines([]); return; }
+      outputs.forEach(line => {
+        line.split("\n").forEach(l => setLines(prev => [...prev, { type: "output", text: l }]));
+      });
+    } else if (trimmed.startsWith("echo ")) {
+      setLines(prev => [...prev, { type: "output", text: trimmed.slice(5).replace(/^["']|["']$/g, "") }]);
+    } else if (trimmed.startsWith("cd ")) {
+      setLines(prev => [...prev, { type: "output", text: "" }]);
+    } else {
+      setLines(prev => [...prev, { type: "error", text: `zsh: command not found: ${trimmed.split(" ")[0]}` }]);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") { runCommand(input); setInput(""); }
+    else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const idx = Math.min(historyIdx + 1, history.length - 1);
+      setHistoryIdx(idx);
+      setInput(history[idx] ?? "");
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const idx = Math.max(historyIdx - 1, -1);
+      setHistoryIdx(idx);
+      setInput(idx === -1 ? "" : history[idx] ?? "");
+    } else if (e.key === "l" && e.ctrlKey) {
+      e.preventDefault(); setLines([]);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height, background: "#080B12", borderTop: "1px solid #1A2033", flexShrink: 0 }}>
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragMouseDown}
+        style={{ height: 4, cursor: "row-resize", background: "transparent", flexShrink: 0, transition: "background 0.15s" }}
+        onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,212,232,0.4)")}
+        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+      />
+      {/* Title bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 28, background: "#060810", borderBottom: "1px solid #1A2033", flexShrink: 0 }}>
+        <span style={{ fontSize: "0.62rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", letterSpacing: "0.08em", textTransform: "uppercase" }}>TERMINAL</span>
+        <span style={{ fontSize: "0.62rem", fontFamily: "'JetBrains Mono', monospace", color: "#2A3555" }}>bash</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: "0.7rem", color: "#2A3555", cursor: "pointer", padding: "2px 4px" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#C8D5E8")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#2A3555")}
+          onClick={() => setLines([])} title="Clear">⌫</span>
+      </div>
+      {/* Output area */}
+      <div
+        onClick={() => inputRef.current?.focus()}
+        style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", lineHeight: 1.6, cursor: "text" }}
+      >
+        {lines.map((l, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
+            {l.type === "input" && (
+              <span style={{ color: "#00D4E8", whiteSpace: "pre" }}>
+                <span style={{ color: "#00E5A0" }}>➜ </span>
+                <span style={{ color: "#8A9BB8" }}>{cwd} </span>
+                <span style={{ color: "#EEF4FF" }}>{l.text}</span>
+              </span>
+            )}
+            {l.type === "output" && <span style={{ color: "#C8D5E8", whiteSpace: "pre" }}>{l.text}</span>}
+            {l.type === "error" && <span style={{ color: "#FF4D6D", whiteSpace: "pre" }}>{l.text}</span>}
+            {l.type === "info" && <span style={{ color: "#3A4560", whiteSpace: "pre" }}>{l.text}</span>}
+          </div>
+        ))}
+        {/* Active prompt line */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span style={{ color: "#00E5A0", whiteSpace: "pre" }}>➜ </span>
+          <span style={{ color: "#8A9BB8", whiteSpace: "pre" }}>{cwd} </span>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            spellCheck={false}
+            style={{
+              flex: 1, background: "transparent", border: "none", outline: "none",
+              color: "#EEF4FF", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem",
+              caretColor: "#00D4E8", padding: 0,
+            }}
+          />
+        </div>
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    MAIN EDITOR PAGE
    ============================================================ */
 export default function EditorPage(): React.ReactElement {
@@ -1585,6 +1755,15 @@ export default function EditorPage(): React.ReactElement {
   const [voicePanelW, setVoicePanelW]       = useState<number>(300);
   const [lastTranscript, setLastTranscript] = useState<string>("");
   const [activeMode, setActiveMode]         = useState<AIMode>("Ask");
+  const injectCodeRef = useRef<((code: string) => void) | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
+  const [terminalHeight, setTerminalHeight] = useState<number>(220);
+
+  const handleSendToChat = useCallback((code: string) => {
+    setVoiceOpen(true);
+    // Give VoicePanel a tick to mount before injecting
+    setTimeout(() => { injectCodeRef.current?.(code); }, 80);
+  }, []);
 
   /* ---- Summary panel state ---- */
   const [summaryData, setSummaryData]       = useState<ConversationSummaryData | null>(null);
@@ -2035,7 +2214,7 @@ export default function EditorPage(): React.ReactElement {
         }}
       >
         {/* Top menu bar */}
-        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} activeMode={activeMode} />
+        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} activeMode={activeMode} terminalOpen={terminalOpen} onTerminalToggle={() => setTerminalOpen(v => !v)} />
 
         {/* Main area */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -2112,6 +2291,7 @@ export default function EditorPage(): React.ReactElement {
                     onRejectAction={handleRejectAction}
                     onCursorChange={(line) => setCursorPos(prev => ({ ...prev, line }))}
                     onSelectionChange={setSelection}
+                    onSendToChat={handleSendToChat}
                   />
                 ) : (
                   <EmptyState />
@@ -2150,6 +2330,42 @@ export default function EditorPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {/* ── Terminal panel (bottom, VS Code style) ── */}
+            {terminalOpen && (
+              <TerminalPanel
+                height={terminalHeight}
+                onHeightChange={setTerminalHeight}
+              />
+            )}
+
+            {/* Bottom drag-up handle to open terminal (always visible when closed) */}
+            {!terminalOpen && (
+              <div
+                onMouseDown={(e) => {
+                  // Start drag — if user drags up, open terminal
+                  const startY = e.clientY;
+                  const onMove = (mv: MouseEvent) => {
+                    if (startY - mv.clientY > 10) {
+                      setTerminalOpen(true);
+                      window.removeEventListener("mousemove", onMove);
+                      window.removeEventListener("mouseup", onUp);
+                    }
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                  e.preventDefault();
+                }}
+                title="Drag up to open terminal"
+                style={{ height: 5, cursor: "row-resize", flexShrink: 0, background: "transparent", borderTop: "1px solid #1A2033", transition: "background 0.15s" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(0,212,232,0.3)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              />
+            )}
           </div>
 
           {/* ── Right: Voice Panel (like VS Code secondary sidebar) ── */}
@@ -2178,6 +2394,7 @@ export default function EditorPage(): React.ReactElement {
                   onTranscriptChange={setLastTranscript}
                   onSummarize={handleSummarize}
                   onModeChange={setActiveMode}
+                  injectCodeRef={injectCodeRef}
                   onCodeAction={(action) => {
                     // Handle multi-file edits - apply pending edit to each target file
                     if (action.edits && action.edits.length > 0) {

@@ -24,6 +24,7 @@ export interface MonacoEditorProps {
   onChange?: (value: string) => void;
   onCursorChange?: (line: number, column: number) => void;
   onSelectionChange?: (selection: string) => void;
+  onSendToChat?: (code: string) => void;
   pendingAction?: CodeAction | null;
   onAcceptAction?: () => void;
   onRejectAction?: () => void;
@@ -94,6 +95,7 @@ export function MonacoEditor({
   onChange,
   onCursorChange,
   onSelectionChange,
+  onSendToChat,
   pendingAction,
   onAcceptAction,
   onRejectAction,
@@ -103,6 +105,9 @@ export function MonacoEditor({
   const monacoRef = useRef<Monaco | null>(null);
   const [previewValue, setPreviewValue] = useState<string | null>(null);
   const decorationsRef = useRef<string[]>([]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [sendBtnPos, setSendBtnPos] = useState<{ x: number; y: number } | null>(null);
+  const [selectedCode, setSelectedCode] = useState<string>("");
 
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -119,8 +124,21 @@ export function MonacoEditor({
 
     // Selection tracking
     editor.onDidChangeCursorSelection((e) => {
-      const selection = editor.getModel()?.getValueInRange(e.selection);
-      onSelectionChange?.(selection || "");
+      const sel = editor.getModel()?.getValueInRange(e.selection) || "";
+      onSelectionChange?.(sel);
+      setSelectedCode(sel);
+      if (sel.trim()) {
+        // Get pixel position of the end of the selection
+        const endPos = { lineNumber: e.selection.endLineNumber, column: e.selection.endColumn };
+        const coords = editor.getScrolledVisiblePosition(endPos);
+        const container = containerRef.current;
+        if (coords && container) {
+          const rect = container.getBoundingClientRect();
+          setSendBtnPos({ x: coords.left, y: coords.top + 6 });
+        }
+      } else {
+        setSendBtnPos(null);
+      }
     });
   }, [onCursorChange, onSelectionChange]);
 
@@ -261,7 +279,7 @@ export function MonacoEditor({
         }
       `}</style>
 
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#08090F" }}>
+      <div ref={containerRef} style={{ display: "flex", flexDirection: "column", height: "100%", background: "#08090F", position: "relative" }}>
         {/* Pending action bar */}
         {pendingAction && (
           <div className="me-action-bar" style={{
@@ -320,6 +338,41 @@ export function MonacoEditor({
                 Reject
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Send to chat floating button */}
+        {sendBtnPos && selectedCode.trim() && onSendToChat && (
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onSendToChat(selectedCode);
+              setSendBtnPos(null);
+            }}
+            title="Send selection to chat"
+            style={{
+              position: "absolute",
+              left: sendBtnPos.x,
+              top: sendBtnPos.y,
+              zIndex: 50,
+              display: "flex", alignItems: "center", gap: 5,
+              background: "#1565C0",
+              border: "1px solid #1E88E5",
+              borderRadius: 6,
+              padding: "4px 10px",
+              cursor: "pointer",
+              boxShadow: "0 2px 12px rgba(21,101,192,0.5)",
+              animation: "meSlideIn 0.15s ease forwards",
+              userSelect: "none",
+              pointerEvents: "all",
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M6.5 11V2M2 6.5L6.5 2L11 6.5" stroke="#90CAF9" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span style={{ color: "#90CAF9", fontSize: "0.7rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, whiteSpace: "nowrap" }}>
+              Send to chat
+            </span>
           </div>
         )}
 

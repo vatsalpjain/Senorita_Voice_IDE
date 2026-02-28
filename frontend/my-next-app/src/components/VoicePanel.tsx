@@ -38,6 +38,7 @@ export interface VoicePanelProps {
   onCodeAction?: (action: CodeActionData) => void;
   onSummarize?: (messages: ChatMessage[], codeChanges: CodeChange[]) => void;
   onModeChange?: (mode: AIMode) => void;
+  injectCodeRef?: React.MutableRefObject<((code: string) => void) | null>;
 }
 
 type MessageRole = "user" | "assistant" | "error";
@@ -256,6 +257,7 @@ export function VoicePanel({
   editorContext,
   onAIResponse,
   onTranscriptChange,
+  injectCodeRef,
   onCodeAction,
   onSummarize,
   onModeChange,
@@ -274,6 +276,25 @@ export function VoicePanel({
 
   const chatEndRef      = useRef<HTMLDivElement>(null);
   const textareaRef     = useRef<HTMLTextAreaElement>(null);
+
+  // Wire up injectCodeRef so parent can push code into the input
+  useEffect(() => {
+    if (injectCodeRef) {
+      injectCodeRef.current = (code: string) => {
+        const snippet = `\`\`\`\n${code}\n\`\`\`\n`;
+        setTextInput(prev => snippet + (prev ? "\n" + prev : ""));
+        setTimeout(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.focus();
+            el.style.height = "auto";
+            el.style.height = Math.min(el.scrollHeight, 120) + "px";
+            el.setSelectionRange(el.value.length, el.value.length);
+          }
+        }, 50);
+      };
+    }
+  }, [injectCodeRef]);
   const streamBubbleId  = useRef<string | null>(null);
   const streamChunks    = useRef<string[]>([]);
 

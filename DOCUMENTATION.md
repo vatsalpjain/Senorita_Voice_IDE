@@ -1400,6 +1400,241 @@ from deepgram.core.api_error     import ApiError
 
 ---
 
-*Documentation Version: 2.0.0 — Project Senorita*
+## 19. ENHANCED FEATURES (v2.1)
+
+The following features have been added to make Senorita function as a full agentic IDE:
+
+### 19.1 Embedding Search with FAISS
+
+**File:** `backend/app/services/embedding_service.py`
+
+Local vector embeddings using `sentence-transformers` (all-MiniLM-L6-v2) with FAISS for fast similarity search.
+
+```python
+from app.services.embedding_service import get_embedding_service, hybrid_search
+
+# Index symbols for semantic search
+embedding_service = get_embedding_service()
+embedding_service.index_symbols(symbols_list)
+
+# Semantic search
+results = embedding_service.search_symbols("authentication handler", top_k=10)
+
+# Hybrid search (keyword + semantic)
+hybrid_results = hybrid_search(query, keyword_results, top_k=8)
+```
+
+**Latency:** ~50ms for embedding, ~5ms for search (local model, no API calls)
+
+### 19.2 Call Graph Tracking
+
+**File:** `backend/app/services/symbol_indexer.py`
+
+Tracks function calls and callers for understanding code relationships.
+
+```python
+from app.services.symbol_indexer import get_indexer
+
+indexer = get_indexer()
+indexer.index_project("/path/to/project")
+
+# Get all functions that call a symbol
+callers = indexer.get_callers("my_function")
+
+# Get all functions a symbol calls
+callees = indexer.get_callees("my_function")
+
+# Get full call chain
+chain = indexer.get_call_chain("my_function", direction="both", max_depth=3)
+```
+
+### 19.3 Planning Agent with Multi-Iteration Retrieval
+
+**File:** `backend/app/agents/planning_agent.py`
+
+Breaks down complex tasks into steps with iterative context retrieval (like Cursor/Copilot).
+
+```python
+from app.agents.planning_agent import planning_agent
+
+result = await planning_agent(
+    transcript="refactor the authentication system across all files",
+    context=file_context,
+    project_root="/path/to/project",
+)
+# Returns: plan with steps, each step can trigger additional retrieval
+```
+
+**Intent triggers:** "plan", "step by step", "multiple files", "across files", "restructure", "migrate"
+
+### 19.4 Conversation Memory & Chat History
+
+**File:** `backend/app/services/memory_service.py`
+
+Persistent conversation history with multiple sessions and long-term memory.
+
+```python
+from app.services.memory_service import get_memory_service, add_to_history
+
+memory_service = get_memory_service()
+
+# Create/switch conversations
+conv = memory_service.create_conversation("Debug Session")
+memory_service.set_active_conversation(conv.id)
+
+# Add messages
+memory_service.add_turn(user_msg, assistant_msg)
+
+# Get context for LLM
+history = memory_service.get_context_messages(max_messages=10)
+memories = memory_service.search_memories("user preferences")
+
+# Long-term memory
+memory_service.add_memory("preference", "User prefers TypeScript over JavaScript")
+```
+
+**API Endpoints:**
+- `POST /conversations/create` - Create new conversation
+- `GET /conversations/list` - List all conversations
+- `POST /conversations/{id}/switch` - Switch active conversation
+- `POST /memory/add` - Add long-term memory
+- `GET /memory/search?q=...` - Search memories
+
+### 19.5 Tool/Function Calling for Agents
+
+**File:** `backend/app/services/tool_service.py`
+
+Provides tools that agents can invoke autonomously.
+
+```python
+from app.services.tool_service import get_tool_registry, execute_tool
+
+# Execute a tool
+result = execute_tool("read_file", file_path="/path/to/file.py")
+result = execute_tool("search_code", query="authentication", use_semantic=True)
+result = execute_tool("get_symbol_info", symbol_name="login", include_callers=True)
+
+# Get tool definitions for LLM function calling
+tools = get_tool_registry().get_tool_definitions_for_llm()
+```
+
+**Available Tools:**
+- `read_file` - Read file contents
+- `search_files` - Search for files by pattern
+- `search_code` - Search symbols (keyword or semantic)
+- `get_symbol_info` - Get symbol details with call graph
+- `grep_search` - Regex search in files
+- `list_directory` - List directory contents
+- `get_file_structure` - Get project tree
+- `run_command` - Run safe terminal commands
+
+### 19.6 Incremental Indexing with File Watcher
+
+**File:** `backend/app/services/file_watcher.py`
+
+Real-time index updates when files change.
+
+```python
+from app.services.file_watcher import start_watching, stop_watching, index_changes
+
+# Start watching a project
+start_watching("/path/to/project")
+
+# Manual incremental index (only changed files)
+count = index_changes("/path/to/project")
+
+# Stop watching
+stop_watching()
+```
+
+**Features:**
+- Debounced updates (0.5s) to avoid excessive re-indexing
+- Automatic symbol index and embedding updates
+- Skips node_modules, __pycache__, .git, etc.
+
+### 19.7 Smart Context Window Management
+
+**File:** `backend/app/services/context_manager.py`
+
+Intelligent context prioritization to fit within LLM token limits.
+
+```python
+from app.services.context_manager import build_context, ContextBuilder
+
+# Build context for specific agent type
+context = build_context(
+    file_context=file_context,
+    agent_type="coding",  # or "debug", "explain", "chat"
+    transcript=user_transcript,
+    history=chat_history,
+    memories=relevant_memories,
+    max_tokens=8000,
+)
+
+# Access prioritized context
+print(context.system_context)  # For system prompt
+print(context.user_context)    # For user message
+print(context.total_tokens)    # Token count
+print(context.items_excluded)  # What didn't fit
+```
+
+**Token Budget Allocation (coding):**
+- Selection: 2000 tokens (highest priority)
+- Cursor context: 1500 tokens
+- Current file: 2000 tokens
+- Related symbols: 1500 tokens
+- History: 500 tokens
+- Memory: 300 tokens
+- Project: 200 tokens
+
+### 19.8 Enhanced Orchestrator
+
+The orchestrator now integrates all new services:
+
+1. **Semantic search** during context gathering
+2. **Conversation history** loaded automatically
+3. **Memory retrieval** for relevant past context
+4. **Planning agent** for complex multi-step tasks
+5. **Automatic history saving** after each interaction
+
+**New Intent:** `plan` - Routes to Planning Agent for complex tasks
+
+---
+
+## QUICK REFERENCE — Import Map (Updated)
+
+```python
+from app.config                  import settings
+from app.models.command          import CommandResult, ActionType
+from app.models.request          import TextCommandRequest, TTSRequest
+from app.models.response         import SenoResponse, ActionResponse
+from app.tools.command_parser    import parse_command, COMMAND_MAP
+from app.services.groq_service   import ask_llm, stream_llm
+from app.services.deepgram_stt   import transcribe_audio, run_live_transcription
+from app.services.deepgram_tts   import text_to_speech, stream_tts
+from app.services.code_actions   import handle_action
+from app.services.n8n_service    import trigger_n8n
+
+# Enhanced Services (v2.1)
+from app.services.embedding_service import get_embedding_service, hybrid_search
+from app.services.symbol_indexer    import get_indexer
+from app.services.memory_service    import get_memory_service, add_to_history
+from app.services.tool_service      import get_tool_registry, execute_tool
+from app.services.file_watcher      import start_watching, index_changes
+from app.services.context_manager   import build_context
+
+# Agents
+from app.agents.planning_agent      import planning_agent
+
+# Deepgram SDK v5 — always use these, never old-style
+from deepgram                    import AsyncDeepgramClient
+from deepgram.core.events        import EventType
+from deepgram.core.api_error     import ApiError
+```
+
+---
+
+*Documentation Version: 2.1.0 — Project Senorita*
 *Deepgram SDK: v5.3.0+ | LLM: llama-3.3-70b-versatile | STT: nova-3 | TTS: aura-2-asteria-en*
+*Enhanced Features: Embedding Search, Call Graph, Planning Agent, Memory, Tools, File Watcher, Context Management*
 *Last updated: February 2026*

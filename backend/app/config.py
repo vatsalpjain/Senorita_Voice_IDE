@@ -10,10 +10,13 @@ class Settings(BaseSettings):
     DEEPGRAM_STT_MODEL: str = "nova-3"              # nova-3 is current model
     DEEPGRAM_TTS_VOICE: str = "aura-2-asteria-en"  # SDK v5 voice name
 
-    # n8n webhook settings
-    N8N_EMAIL_WEBHOOK_URL: str = ""
-    N8N_GITHUB_WEBHOOK_URL: str = ""
-    N8N_SLACK_WEBHOOK_URL: str = ""
+    # n8n webhook settings — outbound (FastAPI → n8n)
+    N8N_BASE_URL: str = "http://localhost:5678"  # n8n instance URL
+    N8N_EMAIL_WEBHOOK_URL: str = ""  # n8n webhook for email workflow trigger
+    
+    # n8n webhook settings — inbound (n8n → FastAPI) security
+    N8N_WEBHOOK_SECRET: str = ""  # shared secret for validating n8n callbacks
+    N8N_ALLOWED_IPS: list[str] = ["127.0.0.1", "localhost"]  # IPs allowed to call n8n endpoints
 
     # App settings
     APP_ENV: str = "development"

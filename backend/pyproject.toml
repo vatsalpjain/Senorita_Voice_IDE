@@ -1,7 +1,7 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Senorita - Voice-powered AI coding assistant"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -32,4 +32,8 @@ dependencies = [
     "websockets>=11.0",
     "onnxruntime>=1.24.2",
     "librosa>=0.11.0",
+    # New dependencies for enhanced features
+    "sentence-transformers>=2.2.0",  # Local embedding model
+    "faiss-cpu>=1.7.0",              # Vector similarity search
+    "watchdog>=3.0.0",               # File system watching for incremental indexing
 ]

@@ -15,6 +15,9 @@ from app.services.deepgram_tts import text_to_speech
 from app.services.code_actions import handle_action
 from app.services.n8n_service import trigger_n8n
 from app.services.file_registry import get_file_registry
+from app.services.memory_service import get_memory_service
+from app.services.symbol_indexer import get_indexer
+from app.services.embedding_service import get_embedding_service
 from app.models.command import CommandResult, ActionType
 from app.config import settings
 
@@ -388,5 +391,344 @@ async def search_files(q: str):
                 "truncated": len(f.content) > 5000,
             }
             for f in results[:10]  # Limit to 10 results
+        ]
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat History & Memory API — Conversation persistence and switching
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CreateConversationRequest(BaseModel):
+    """Request to create a new conversation"""
+    title: str = "New Conversation"
+    project_root: str = ""
+
+
+class AddMemoryRequest(BaseModel):
+    """Request to add a memory"""
+    category: str
+    content: str
+    importance: float = 1.0
+
+
+@router.post("/conversations/create")
+async def create_conversation(request: CreateConversationRequest):
+    """Create a new conversation session"""
+    memory_service = get_memory_service()
+    conv = memory_service.create_conversation(
+        title=request.title,
+        project_root=request.project_root,
+    )
+    return {
+        "ok": True,
+        "conversation": {
+            "id": conv.id,
+            "title": conv.title,
+            "created_at": conv.created_at,
+        }
+    }
+
+
+@router.get("/conversations/list")
+async def list_conversations():
+    """List all conversations"""
+    memory_service = get_memory_service()
+    conversations = memory_service.list_conversations()
+    return {"ok": True, "conversations": conversations}
+
+
+@router.get("/conversations/{conv_id}")
+async def get_conversation(conv_id: str):
+    """Get a specific conversation with its messages"""
+    memory_service = get_memory_service()
+    conv = memory_service.get_conversation(conv_id)
+    
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {
+        "ok": True,
+        "conversation": {
+            "id": conv.id,
+            "title": conv.title,
+            "created_at": conv.created_at,
+            "updated_at": conv.updated_at,
+            "messages": [
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp,
+                    "metadata": msg.metadata,
+                }
+                for msg in conv.messages
+            ],
+        }
+    }
+
+
+@router.post("/conversations/{conv_id}/switch")
+async def switch_conversation(conv_id: str):
+    """Switch to a different conversation"""
+    memory_service = get_memory_service()
+    success = memory_service.set_active_conversation(conv_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {"ok": True, "active_conversation": conv_id}
+
+
+@router.delete("/conversations/{conv_id}")
+async def delete_conversation(conv_id: str):
+    """Delete a conversation"""
+    memory_service = get_memory_service()
+    success = memory_service.delete_conversation(conv_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {"ok": True}
+
+
+@router.get("/conversations/active")
+async def get_active_conversation():
+    """Get the currently active conversation"""
+    memory_service = get_memory_service()
+    conv = memory_service.get_active_conversation()
+    
+    if not conv:
+        return {"ok": True, "conversation": None}
+    
+    return {
+        "ok": True,
+        "conversation": {
+            "id": conv.id,
+            "title": conv.title,
+            "message_count": len(conv.messages),
+        }
+    }
+
+
+@router.get("/conversations/{conv_id}/export")
+async def export_conversation(conv_id: str):
+    """Export a conversation as JSON"""
+    memory_service = get_memory_service()
+    data = memory_service.export_conversation(conv_id)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {"ok": True, "data": data}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memory API — Long-term memory management
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/memory/add")
+async def add_memory(request: AddMemoryRequest):
+    """Add a new memory"""
+    memory_service = get_memory_service()
+    memory = memory_service.add_memory(
+        category=request.category,
+        content=request.content,
+        importance=request.importance,
+    )
+    return {
+        "ok": True,
+        "memory": {
+            "id": memory.id,
+            "category": memory.category,
+            "content": memory.content,
+        }
+    }
+
+
+@router.get("/memory/list")
+async def list_memories(category: Optional[str] = None, limit: int = 20):
+    """List memories, optionally filtered by category"""
+    memory_service = get_memory_service()
+    memories = memory_service.get_memories(category=category, limit=limit)
+    return {
+        "ok": True,
+        "memories": [
+            {
+                "id": m.id,
+                "category": m.category,
+                "content": m.content,
+                "importance": m.importance,
+                "created_at": m.created_at,
+            }
+            for m in memories
+        ]
+    }
+
+
+@router.get("/memory/search")
+async def search_memories(q: str, limit: int = 10):
+    """Search memories by content"""
+    memory_service = get_memory_service()
+    memories = memory_service.search_memories(q, limit=limit)
+    return {
+        "ok": True,
+        "memories": [
+            {
+                "id": m.id,
+                "category": m.category,
+                "content": m.content,
+                "importance": m.importance,
+            }
+            for m in memories
+        ]
+    }
+
+
+@router.delete("/memory/{memory_id}")
+async def delete_memory(memory_id: str):
+    """Delete a memory"""
+    memory_service = get_memory_service()
+    success = memory_service.delete_memory(memory_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    
+    return {"ok": True}
+
+
+@router.get("/memory/stats")
+async def memory_stats():
+    """Get memory service statistics"""
+    memory_service = get_memory_service()
+    return {"ok": True, **memory_service.stats()}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Index API — Symbol indexer and embedding service status
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/index/project")
+async def index_project(project_root: str):
+    """Index a project for symbol search"""
+    try:
+        indexer = get_indexer()
+        count = indexer.index_project(project_root)
+        
+        # Also index symbols for embedding search
+        try:
+            embedding_service = get_embedding_service()
+            all_symbols = []
+            for file_symbols in indexer.index.by_file.values():
+                for sym in file_symbols.symbols:
+                    all_symbols.append({
+                        "name": sym.name,
+                        "kind": sym.kind,
+                        "file_path": sym.file_path,
+                        "line": sym.line,
+                        "signature": sym.signature,
+                        "docstring": sym.docstring,
+                    })
+            embedding_service.index_symbols(all_symbols)
+        except Exception as e:
+            logger.warning(f"Embedding indexing failed: {e}")
+        
+        return {
+            "ok": True,
+            "files_indexed": count,
+            "summary": indexer.get_project_summary(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/index/stats")
+async def index_stats():
+    """Get indexer statistics"""
+    indexer = get_indexer()
+    embedding_service = get_embedding_service()
+    
+    return {
+        "ok": True,
+        "symbol_index": indexer.get_project_summary(),
+        "embedding_index": embedding_service.stats(),
+    }
+
+
+@router.get("/index/search")
+async def search_symbols(q: str, limit: int = 20, semantic: bool = False):
+    """Search for symbols by name or semantically"""
+    indexer = get_indexer()
+    
+    if semantic:
+        embedding_service = get_embedding_service()
+        results = embedding_service.search_symbols(q, top_k=limit)
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "name": r.metadata.get("name"),
+                    "kind": r.metadata.get("kind"),
+                    "file_path": r.metadata.get("file_path"),
+                    "line": r.metadata.get("line"),
+                    "score": r.score,
+                }
+                for r in results
+            ]
+        }
+    else:
+        symbols = indexer.search_symbols(q, limit=limit)
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "name": s.name,
+                    "kind": s.kind,
+                    "file_path": s.file_path,
+                    "line": s.line,
+                    "signature": s.signature,
+                }
+                for s in symbols
+            ]
+        }
+
+
+@router.get("/index/callers/{symbol_name}")
+async def get_symbol_callers(symbol_name: str):
+    """Get all functions that call a given symbol"""
+    indexer = get_indexer()
+    callers = indexer.get_callers(symbol_name)
+    
+    return {
+        "ok": True,
+        "symbol": symbol_name,
+        "callers": [
+            {
+                "name": c.name,
+                "kind": c.kind,
+                "file_path": c.file_path,
+                "line": c.line,
+            }
+            for c in callers
+        ]
+    }
+
+
+@router.get("/index/callees/{symbol_name}")
+async def get_symbol_callees(symbol_name: str):
+    """Get all functions that a given symbol calls"""
+    indexer = get_indexer()
+    callees = indexer.get_callees(symbol_name)
+    
+    return {
+        "ok": True,
+        "symbol": symbol_name,
+        "callees": [
+            {
+                "name": c.name,
+                "kind": c.kind,
+                "file_path": c.file_path,
+                "line": c.line,
+            }
+            for c in callees
         ]
     }

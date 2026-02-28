@@ -1,29 +1,43 @@
 """
 Main Orchestrator — LangGraph-based state machine that routes voice commands
-to the appropriate agents (Context, Coding, Debug, Workflow).
+to the appropriate agents (Context, Coding, Debug, Workflow, Planning).
 
 Flow:
 1. Receive transcript + file context from frontend
 2. Context Agent always runs first to gather enriched context
-3. Detect intent from transcript (coding, debug, workflow, explain)
-4. Route to appropriate agent
-5. Return structured result for frontend to execute
+3. Memory service adds conversation history and long-term memories
+4. Context Manager prioritizes and fits context within token budget
+5. Detect intent from transcript (coding, debug, workflow, explain, plan)
+6. Route to appropriate agent (with optional planning for complex tasks)
+7. Return structured result for frontend to execute
+
+Enhanced Features:
+- Semantic search via embeddings for better context retrieval
+- Call graph tracking for understanding code relationships
+- Multi-iteration retrieval for complex tasks
+- Conversation memory and chat history
+- Smart context window management
 """
 import logging
-from typing import Literal, TypedDict, Any
+from typing import Literal, TypedDict, Any, Optional
 from langgraph.graph import StateGraph, END
 
 from app.agents.context_agent import get_context, FileContext
 from app.agents.coding_agent import coding_agent, CodeAction
 from app.agents.debug_agent import debug_agent, DebugResult
 from app.agents.workflow_agent import workflow_agent, WorkflowResult
+from app.agents.planning_agent import planning_agent, PlanResult
 from app.services.groq_service import ask_llm
+from app.services.memory_service import get_memory_service, add_to_history, get_chat_context
+from app.services.context_manager import build_context, AssembledContext
+from app.services.embedding_service import get_embedding_service, hybrid_search
+from app.services.symbol_indexer import get_indexer
 
 logger = logging.getLogger(__name__)
 
 
 # Intent types that the orchestrator can route to
-IntentType = Literal["coding", "debug", "workflow", "explain", "chat"]
+IntentType = Literal["coding", "debug", "workflow", "explain", "chat", "plan"]
 
 
 class OrchestratorState(TypedDict):
@@ -37,10 +51,14 @@ class OrchestratorState(TypedDict):
     project_root: str                   # Project root directory
     error_message: str                  # Error from terminal (for debug)
     mode: str                           # Explicit mode from UI ("auto" or specific)
+    conversation_id: str                # Conversation ID for memory
     
     # Internal state
     context: FileContext | None         # Enriched context from Context Agent
     intent: IntentType | None           # Detected intent
+    assembled_context: dict | None      # Context after smart prioritization
+    chat_history: list | None           # Recent conversation history
+    memories: list | None               # Relevant long-term memories
     
     # Output
     result: dict | None                 # Result from the routed agent
@@ -95,6 +113,16 @@ INTENT_MAP = {
     "remind": "workflow",
     "calendar": "workflow",
     "schedule": "workflow",
+    
+    # Planning intents (complex multi-step tasks)
+    "plan": "plan",
+    "step by step": "plan",
+    "multiple files": "plan",
+    "across files": "plan",
+    "entire": "plan",
+    "whole project": "plan",
+    "restructure": "plan",
+    "migrate": "plan",
 }
 
 
@@ -104,7 +132,7 @@ def detect_intent(transcript: str, explicit_mode: str = "auto") -> IntentType:
     Explicit mode from UI takes priority over auto-detection.
     """
     # If UI explicitly set a mode, use it
-    if explicit_mode != "auto" and explicit_mode in ("coding", "debug", "workflow", "explain"):
+    if explicit_mode != "auto" and explicit_mode in ("coding", "debug", "workflow", "explain", "plan"):
         return explicit_mode
     
     transcript_lower = transcript.lower()
@@ -129,26 +157,105 @@ def detect_intent(transcript: str, explicit_mode: str = "auto") -> IntentType:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def gather_context_node(state: OrchestratorState) -> dict:
-    """Node 1: Context Agent — always runs first to gather file context"""
+    """
+    Node 1: Context Agent — always runs first to gather file context.
+    
+    Enhanced with:
+    - Semantic search via embeddings
+    - Conversation history from memory service
+    - Smart context prioritization
+    """
     try:
         file_content = state.get("file_content", "")
         transcript = state.get("transcript", "")
         logger.info(f"gather_context_node: file_path={state['file_path']}, file_content_len={len(file_content)}")
         
+        # Get base context from Context Agent
         context = await get_context(
             file_path=state["file_path"],
             file_content=file_content,
             cursor_line=state["cursor_line"],
             selection=state["selection"],
             project_root=state.get("project_root"),
-            transcript=transcript,  # Pass transcript for keyword-based symbol search
+            transcript=transcript,
         )
+        
+        # Enhance with semantic search if we have a transcript
+        if transcript:
+            try:
+                embedding_service = get_embedding_service()
+                indexer = get_indexer()
+                
+                # Get keyword results from symbol indexer
+                keyword_results = indexer.search_symbols(transcript, limit=10)
+                keyword_dicts = [
+                    {
+                        "name": s.name,
+                        "kind": s.kind,
+                        "file_path": s.file_path,
+                        "line": s.line,
+                        "signature": s.signature,
+                    }
+                    for s in keyword_results
+                ]
+                
+                # Perform hybrid search (keyword + semantic)
+                hybrid_results = hybrid_search(transcript, keyword_dicts, top_k=8)
+                
+                # Add hybrid results to relevant snippets if not already present
+                existing_names = {s.get("symbol_name") for s in context.get("relevant_snippets", [])}
+                for result in hybrid_results:
+                    if result.get("name") not in existing_names:
+                        # Get code context for this symbol
+                        symbols = indexer.find_symbol(result.get("name", ""))
+                        if symbols:
+                            code = indexer.get_context_for_symbol(symbols[0], context_lines=5)
+                            if code:
+                                context["relevant_snippets"].append({
+                                    "symbol_name": result.get("name"),
+                                    "kind": result.get("kind"),
+                                    "file_path": result.get("file_path"),
+                                    "line": result.get("line"),
+                                    "code": code[:1500],
+                                    "source": result.get("source", "hybrid"),
+                                })
+                
+                logger.info(f"gather_context_node: enhanced with {len(hybrid_results)} hybrid search results")
+            except Exception as e:
+                logger.warning(f"Semantic search enhancement failed (non-fatal): {e}")
+        
+        # Get conversation history and memories
+        chat_history = []
+        memories = []
+        try:
+            memory_service = get_memory_service()
+            
+            # Get recent chat history
+            chat_history = memory_service.get_context_messages(max_messages=5)
+            
+            # Get relevant memories
+            relevant_context = memory_service.get_relevant_context(
+                transcript,
+                include_history=False,  # Already got history above
+                include_memories=True,
+                max_memories=5,
+            )
+            memories = relevant_context.get("memories", [])
+            
+            logger.info(f"gather_context_node: loaded {len(chat_history)} history messages, {len(memories)} memories")
+        except Exception as e:
+            logger.warning(f"Memory service failed (non-fatal): {e}")
+        
         logger.info(
             f"gather_context_node: context current_file_len={len(context.get('current_file', ''))}, "
             f"relevant_snippets={len(context.get('relevant_snippets', []))}, "
             f"referenced_files={len(context.get('referenced_files', []))}"
         )
-        return {"context": context}
+        return {
+            "context": context,
+            "chat_history": chat_history,
+            "memories": memories,
+        }
     except Exception as e:
         logger.error(f"Context Agent failed: {e}")
         # Return minimal context on failure - use file_content from state
@@ -423,6 +530,37 @@ Keep responses concise — this will be spoken aloud. Aim for 2-4 sentences unle
         }
 
 
+async def planning_node(state: OrchestratorState) -> dict:
+    """
+    Node: Planning Agent — handles complex multi-step tasks.
+    
+    Breaks down complex requests into steps, performs multi-iteration
+    retrieval, and coordinates with other agents.
+    """
+    try:
+        result = await planning_agent(
+            transcript=state["transcript"],
+            context=state["context"],
+            project_root=state.get("project_root", ""),
+        )
+        
+        # Build response text
+        steps_info = f"{result['steps_completed']}/{result['total_steps']} steps"
+        response_text = f"Created execution plan with {result['total_steps']} steps. {result['explanation']}"
+        
+        return {
+            "result": {"type": "plan_result", "data": result},
+            "response_text": response_text,
+        }
+    except Exception as e:
+        logger.error(f"Planning Agent failed: {e}")
+        return {
+            "result": None,
+            "response_text": "I had trouble creating a plan. Please try again.",
+            "error": str(e),
+        }
+
+
 def route_by_intent(state: OrchestratorState) -> str:
     """Routing function — determines which agent node to call based on intent"""
     intent = state.get("intent", "chat")
@@ -435,6 +573,8 @@ def route_by_intent(state: OrchestratorState) -> str:
         return "workflow"
     elif intent == "explain":
         return "explain"
+    elif intent == "plan":
+        return "planning"
     else:
         return "chat"
 
@@ -449,6 +589,11 @@ def build_orchestrator_graph() -> StateGraph:
     
     Flow:
     START → gather_context → detect_intent → [route] → agent_node → END
+    
+    Enhanced with:
+    - Planning agent for complex multi-step tasks
+    - Memory integration for conversation continuity
+    - Semantic search for better context retrieval
     """
     # Create the graph with our state type
     graph = StateGraph(OrchestratorState)
@@ -461,6 +606,7 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_node("workflow", workflow_node)
     graph.add_node("explain", explain_node)
     graph.add_node("chat", chat_node)
+    graph.add_node("planning", planning_node)
     
     # Set entry point
     graph.set_entry_point("gather_context")
@@ -478,6 +624,7 @@ def build_orchestrator_graph() -> StateGraph:
             "workflow": "workflow",
             "explain": "explain",
             "chat": "chat",
+            "planning": "planning",
         }
     )
     
@@ -487,6 +634,7 @@ def build_orchestrator_graph() -> StateGraph:
     graph.add_edge("workflow", END)
     graph.add_edge("explain", END)
     graph.add_edge("chat", END)
+    graph.add_edge("planning", END)
     
     return graph
 
@@ -509,6 +657,7 @@ async def orchestrate(
     project_root: str | None = None,
     error_message: str = "",
     mode: str = "auto",
+    conversation_id: str = "",
 ) -> dict:
     """
     Main entry point for the orchestrator.
@@ -517,11 +666,13 @@ async def orchestrate(
     Args:
         transcript: User's voice command
         file_path: Absolute path to current file
+        file_content: File content from editor
         cursor_line: 1-indexed cursor position
         selection: Selected code snippet
         project_root: Project root directory
         error_message: Error from terminal (for debug mode)
-        mode: Explicit mode ("auto", "coding", "debug", "workflow", "explain")
+        mode: Explicit mode ("auto", "coding", "debug", "workflow", "explain", "plan")
+        conversation_id: ID for conversation memory tracking
     
     Returns:
         dict with:
@@ -540,8 +691,12 @@ async def orchestrate(
         "project_root": project_root or "",
         "error_message": error_message,
         "mode": mode,
+        "conversation_id": conversation_id,
         "context": None,
         "intent": None,
+        "assembled_context": None,
+        "chat_history": None,
+        "memories": None,
         "result": None,
         "response_text": "",
         "error": None,
@@ -550,6 +705,21 @@ async def orchestrate(
     # Run the graph
     try:
         final_state = await _compiled_orchestrator.ainvoke(initial_state)
+        
+        # Save to conversation history
+        try:
+            response_text = final_state.get("response_text", "")
+            if response_text:
+                add_to_history(
+                    user_msg=transcript,
+                    assistant_msg=response_text,
+                    metadata={
+                        "intent": final_state.get("intent"),
+                        "file_path": file_path,
+                    }
+                )
+        except Exception as e:
+            logger.warning(f"Failed to save to history: {e}")
         
         return {
             "intent": final_state.get("intent", "chat"),

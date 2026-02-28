@@ -36,7 +36,7 @@ HOP_LENGTH = 160
 WIN_LENGTH = 400
 
 # Default detection threshold
-DEFAULT_THRESHOLD = 0.3
+DEFAULT_THRESHOLD = 0.5
 
 # Path to ONNX model
 MODEL_PATH = Path(__file__).parent.parent / "models" / "senorita_wakeword.onnx"

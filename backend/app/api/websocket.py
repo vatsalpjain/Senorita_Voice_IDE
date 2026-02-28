@@ -199,6 +199,19 @@ async def _handle_agentic_command(websocket: WebSocket, data: dict):
         await websocket.send_json({"type": "error", "message": "No file_path or file_content provided"})
         return
     
+    # Activity callback to send real-time status updates
+    async def on_activity(status: str, message: str, files: list):
+        """Send activity updates to frontend in real-time"""
+        try:
+            await websocket.send_json({
+                "type": "activity",
+                "status": status,
+                "message": message,
+                "files": [f.split("/")[-1].split("\\")[-1] for f in files],  # Just filenames
+            })
+        except Exception:
+            pass  # Ignore send errors
+    
     # Run the orchestrator
     try:
         result = await orchestrate(
@@ -210,6 +223,7 @@ async def _handle_agentic_command(websocket: WebSocket, data: dict):
             project_root=project_root,
             error_message=error_message,
             mode=mode,
+            on_activity=on_activity,
         )
     except Exception as e:
         logger.error(f"Orchestrator error: {e}")

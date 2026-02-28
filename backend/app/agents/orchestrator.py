@@ -658,6 +658,7 @@ async def orchestrate(
     error_message: str = "",
     mode: str = "auto",
     conversation_id: str = "",
+    on_activity: Optional[callable] = None,
 ) -> dict:
     """
     Main entry point for the orchestrator.
@@ -702,9 +703,60 @@ async def orchestrate(
         "error": None,
     }
     
-    # Run the graph
+    # Run the graph with activity callbacks
     try:
+        # Send activity: gathering context
+        if on_activity:
+            await on_activity("reading", f"Reading {file_path.split('/')[-1] if file_path else 'file'}...", [file_path] if file_path else [])
+        
         final_state = await _compiled_orchestrator.ainvoke(initial_state)
+        
+        # Send activity: files that were read during context gathering
+        if on_activity and final_state.get("context"):
+            context = final_state["context"]
+            files_read = []
+            
+            # Files to exclude from display (config/metadata files)
+            EXCLUDE_FILES = {
+                "pyproject.toml", "package.json", "package-lock.json", "tsconfig.json",
+                "requirements.txt", "setup.py", "setup.cfg", ".gitignore", ".env",
+                "README.md", "LICENSE", "Makefile", "Dockerfile", ".dockerignore",
+                "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.toml", "go.mod",
+            }
+            
+            def is_relevant_file(path: str) -> bool:
+                """Check if file is relevant (not a config/metadata file)"""
+                if not path:
+                    return False
+                filename = path.split("/")[-1].split("\\")[-1]
+                return filename not in EXCLUDE_FILES
+            
+            # PRIORITY 1: Referenced files (from smart context - most relevant)
+            # These now come with scores and reasons from semantic search
+            for ref_file in context.get("referenced_files", []):
+                path = ref_file.get("path", "")
+                score = ref_file.get("score", 0)
+                # Only include files with decent relevance score
+                if path and is_relevant_file(path) and path not in files_read and score >= 0.25:
+                    files_read.append(path)
+            
+            # PRIORITY 2: Current file (if relevant)
+            current_file = context.get("file_path", "")
+            if current_file and is_relevant_file(current_file) and current_file not in files_read:
+                files_read.append(current_file)
+            
+            # PRIORITY 3: Files from relevant snippets (from symbol search)
+            # Only add if we don't have enough files yet
+            if len(files_read) < 5:
+                for snippet in context.get("relevant_snippets", []):
+                    snippet_path = snippet.get("file_path", "")
+                    if snippet_path and is_relevant_file(snippet_path) and snippet_path not in files_read:
+                        files_read.append(snippet_path)
+                        if len(files_read) >= 8:
+                            break
+            
+            if files_read:
+                await on_activity("generating", "Generating response...", files_read[:8])
         
         # Save to conversation history
         try:

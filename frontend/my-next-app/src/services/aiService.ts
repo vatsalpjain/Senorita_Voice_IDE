@@ -92,6 +92,14 @@ export interface WSCompleteMsg { type: "response_complete"; action: string; text
 export interface WSErrorMsg    { type: "error";             message: string; }
 export interface WSConnected   { type: "connected";         message: string; }
 
+// Activity status message (real-time file reading/searching updates)
+export interface WSActivityMsg {
+  type: "activity";
+  status: "reading" | "searching" | "generating" | "editing";
+  message: string;
+  files: string[];
+}
+
 // New agentic workflow messages
 export interface WSIntentMsg   { type: "intent";            intent: string; }
 export interface WSAgentResultMsg {
@@ -150,7 +158,7 @@ export interface ExplanationData {
 
 export type WSIncomingMsg =
   | WSActionMsg | WSChunkMsg | WSCompleteMsg
-  | WSErrorMsg  | WSConnected
+  | WSErrorMsg  | WSConnected | WSActivityMsg
   | WSIntentMsg | WSAgentResultMsg | WSAgentCompleteMsg
   | { type: string; [key: string]: unknown };
 
@@ -163,6 +171,8 @@ export interface StreamCallbacks {
   onChunk?:    (chunk: string)  => void;
   onComplete?: (text: string, action: string, code: string | null) => void;
   onError?:    (message: string) => void;
+  // Activity status callback (real-time file reading/searching updates)
+  onActivity?: (status: string, message: string, files: string[]) => void;
   // Agentic callbacks
   onIntent?:       (intent: string) => void;
   onCodeAction?:   (data: CodeActionData) => void;
@@ -192,6 +202,13 @@ export function dispatchWSMessage(
     case "error":
       callbacks.onError?.((msg as WSErrorMsg).message);
       break;
+    
+    // Activity status (real-time file reading/searching updates)
+    case "activity": {
+      const activityMsg = msg as WSActivityMsg;
+      callbacks.onActivity?.(activityMsg.status, activityMsg.message, activityMsg.files);
+      break;
+    }
 
     // Agentic message types
     case "intent":

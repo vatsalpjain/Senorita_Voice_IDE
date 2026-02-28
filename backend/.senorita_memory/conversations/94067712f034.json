@@ -1,0 +1,25 @@
+{
+  "id": "94067712f034",
+  "title": "New Conversation",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can You Tell me What All Agents are there and How is the flow",
+      "timestamp": "2026-02-28T07:01:41.869121",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "coding_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "There are several agents in the Senorita system, including the Context Agent, Coding Agent, Debug Agent, and Workflow Agent, as mentioned in `__init__.py`. The flow starts with the Context Agent, which retrieves file content and context, then passes it to other agents like the Coding Agent in `coding_agent.py`. The Coding Agent generates code actions based on user input and context, as seen in the `coding_agent` function.",
+      "timestamp": "2026-02-28T07:01:41.870356",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2026-02-28T07:01:41.867150",
+  "updated_at": "2026-02-28T07:01:41.870365",
+  "project_root": "",
+  "metadata": {}
+}

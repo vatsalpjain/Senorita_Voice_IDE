@@ -406,18 +406,27 @@ def _get_project_files(project_root: str) -> list[tuple[str, str]]:
 
 def detect_files_in_transcript(transcript: str, project_root: str | None = None) -> list[dict]:
     """
-    Detect file names mentioned in the transcript and return their info.
+    Detect relevant files for a transcript using smart semantic context retrieval.
     
-    Uses the file registry (populated by frontend) instead of filesystem access.
+    Uses the SmartContext service which combines:
+    - Semantic understanding of the query
+    - File category detection (agents, services, components, etc.)
+    - Embedding-based similarity search
+    - Multi-signal relevance scoring
     
-    Handles voice input like:
-    - "Monaco editor dot TSX" -> MonacoEditor.tsx
-    - "voice panel" -> VoicePanel.tsx
-    - "orchestrator dot py" -> orchestrator.py
-    - "all the agents" -> all files in agents/ folder
-    
-    Returns list of {filename, path, content} for matched files.
+    Returns list of {filename, path, content, score, reason, category} for matched files.
     """
+    # Use smart context retrieval for better results
+    try:
+        from app.services.smart_context import get_smart_context_files
+        smart_results = get_smart_context_files(transcript)
+        if smart_results:
+            logger.info(f"Context Agent: smart context found {len(smart_results)} relevant files")
+            return smart_results
+    except Exception as e:
+        logger.warning(f"Smart context failed, falling back to keyword matching: {e}")
+    
+    # Fallback to simple keyword matching if smart context fails
     registry = get_file_registry()
     registered_files = registry.get_all()
     
@@ -426,7 +435,6 @@ def detect_files_in_transcript(transcript: str, project_root: str | None = None)
         return []
     
     # Keyword to folder/category mapping
-    # When user says "agents", find all files in paths containing "agents"
     CATEGORY_KEYWORDS = {
         "agents": ["agents", "agent"],
         "components": ["components", "component"],

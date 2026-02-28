@@ -45,6 +45,7 @@ interface FileNode {
   isOpen?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle?: any;
+  path?: string;
 }
 
 interface PendingFileEdit {
@@ -491,7 +492,7 @@ function highlightCode(code: string, language: string): React.ReactElement[] {
 
   return lines.map((line, i) => (
     <div key={i} style={{ display: "flex", minHeight: "1.6em" }}>
-      <span style={{ color: "#2A3555", width: 40, textAlign: "right", paddingRight: 16, userSelect: "none", flexShrink: 0, fontSize: "0.75rem" }}>
+      <span style={{ color: "#2A3555", width: 40, textAlign: "right", paddingRight: 16, userSelect: "none", flexShrink: 0, fontSize: "0.82rem" }}>
         {i + 1}
       </span>
       <span style={{ flex: 1 }}>{tokenize(line, language)}</span>
@@ -603,7 +604,7 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
         ))}
       </div>
 
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem", color: "#2A3555", marginBottom: 48, letterSpacing: "0.08em" }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", color: "#2A3555", marginBottom: 48, letterSpacing: "0.08em" }}>
         v0.1.0 — hackathon edition
       </div>
 
@@ -613,7 +614,7 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
           <div key={i} style={{
             display: "flex", alignItems: "center", gap: 10,
             fontFamily: "'JetBrains Mono', monospace",
-            fontSize: "0.72rem", marginBottom: 6,
+            fontSize: "0.78rem", marginBottom: 6,
             opacity: i <= phase ? 1 : 0.2,
             transition: "opacity 0.3s ease",
           }}>
@@ -644,7 +645,7 @@ const BootScreen = ({ onComplete }: BootScreenProps): React.ReactElement => {
         <div style={{
           display: "flex", justifyContent: "space-between",
           marginTop: 8,
-          fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", color: "#2A3555",
+          fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem", color: "#2A3555",
         }}>
           <span>Loading workspace</span>
           <span>{Math.round(progress)}%</span>
@@ -703,7 +704,7 @@ const FileTreeNode = ({ node, depth, onFileClick, activeFileId }: FileTreeNodePr
           onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#E2E8F0")}
           onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.color = "#8A9BB8")}
         >
-          <span style={{ fontSize: "0.6rem", transition: "transform 0.15s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+          <span style={{ fontSize: "0.68rem", transition: "transform 0.15s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
           <span style={{ fontSize: "0.85rem" }}>{open ? "📂" : "📁"}</span>
           <span>{node.name}</span>
         </div>
@@ -830,11 +831,11 @@ const TabsBar = ({ tabs, activeTabId, onTabClick, onTabClose }: TabsBarProps): R
             transition: "background 0.15s",
           }}
         >
-          <span style={{ fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace", color, opacity: 0.8, flexShrink: 0 }}>
+          <span style={{ fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace", color, opacity: 0.8, flexShrink: 0 }}>
             {LANG_ICONS[lang] || "◦"}
           </span>
           <span style={{
-            fontSize: "0.78rem", color: isActive ? "#C8D5E8" : "#5A6888",
+            fontSize: "0.85rem", color: isActive ? "#C8D5E8" : "#5A6888",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             fontFamily: "'DM Sans', sans-serif",
           }}>
@@ -844,7 +845,7 @@ const TabsBar = ({ tabs, activeTabId, onTabClick, onTabClose }: TabsBarProps): R
           <span
             onClick={(e: React.MouseEvent) => { e.stopPropagation(); onTabClose(tab.id); }}
             style={{
-              color: "#2A3555", fontSize: "0.65rem",
+              color: "#2A3555", fontSize: "0.72rem",
               marginLeft: 2, padding: "1px 3px", borderRadius: 2,
               transition: "color 0.15s, background 0.15s",
               flexShrink: 0, lineHeight: 1,
@@ -919,17 +920,17 @@ const MarkdownPanel = ({ content }: MarkdownPanelProps): React.ReactElement => {
       if (line.startsWith("# ")) return <h1 key={i} style={{ fontFamily: "'Syne', sans-serif", fontSize: "1.3rem", fontWeight: 700, color: "#EEF4FF", marginBottom: 12, letterSpacing: "-0.02em" }}>{line.slice(2)}</h1>;
       if (line.startsWith("## ")) return <h2 key={i} style={{ fontFamily: "'Syne', sans-serif", fontSize: "1rem", fontWeight: 600, color: "#C8D5E8", marginTop: 16, marginBottom: 8 }}>{line.slice(3)}</h2>;
       if (line.startsWith("### ")) return <h3 key={i} style={{ fontSize: "0.9rem", fontWeight: 600, color: "#8A9BB8", marginTop: 12, marginBottom: 6 }}>{line.slice(4)}</h3>;
-      if (line.startsWith("- ")) return <li key={i} style={{ color: "#8A9BB8", fontSize: "0.82rem", lineHeight: 1.6, marginLeft: 16, marginBottom: 4 }}>{line.slice(2)}</li>;
+      if (line.startsWith("- ")) return <li key={i} style={{ color: "#8A9BB8", fontSize: "0.88rem", lineHeight: 1.6, marginLeft: 16, marginBottom: 4 }}>{line.slice(2)}</li>;
       if (line.startsWith("```")) return <div key={i} style={{ height: 1, background: "#1A2033", margin: "8px 0" }} />;
       if (line.trim() === "") return <div key={i} style={{ height: 8 }} />;
-      return <p key={i} style={{ color: "#5A6888", fontSize: "0.82rem", lineHeight: 1.6, marginBottom: 4 }}>{line}</p>;
+      return <p key={i} style={{ color: "#5A6888", fontSize: "0.88rem", lineHeight: 1.6, marginBottom: 4 }}>{line}</p>;
     });
   };
 
   return (
     <div style={{ height: "100%", overflow: "auto", padding: "20px 20px" }}>
       <div style={{
-        fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace",
+        fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace",
         color: "#2A3555", letterSpacing: "0.08em", textTransform: "uppercase",
         marginBottom: 16, paddingBottom: 8, borderBottom: "1px solid #1A2033",
       }}>
@@ -956,7 +957,7 @@ const StatusBar = ({ activeTab, fileCount, cursorPos }: StatusBarProps): React.R
     background: "#060810",
     borderTop: "1px solid #0F1420",
     padding: "0 12px",
-    fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace",
     flexShrink: 0,
   }}>
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -1047,7 +1048,7 @@ const ActivityBar = ({ activePanel, onPanelChange }: ActivityBarProps): React.Re
         width: 28, height: 28, borderRadius: "50%",
         background: "linear-gradient(135deg, #00D4E8, #00E5A0)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: "0.65rem", color: "#07090E", fontWeight: 700,
+        fontSize: "0.72rem", color: "#07090E", fontWeight: 700,
         marginBottom: 8, cursor: "pointer",
         fontFamily: "'Syne', sans-serif",
       }}>
@@ -1131,7 +1132,7 @@ const SearchPanel = ({
       <div style={{ position: "relative", marginBottom: 8 }}>
         <span style={{
           position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)",
-          color: "#5A6888", fontSize: "0.75rem", pointerEvents: "none",
+          color: "#5A6888", fontSize: "0.82rem", pointerEvents: "none",
         }}>⌕</span>
         <input
           autoFocus
@@ -1152,13 +1153,13 @@ const SearchPanel = ({
       </div>
 
       {query.trim() === "" && (
-        <div style={{ color: "#3A4560", fontSize: "0.7rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ color: "#3A4560", fontSize: "0.78rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
           Type to search file names or contents
         </div>
       )}
 
       {query.trim() !== "" && results.length === 0 && (
-        <div style={{ color: "#3A4560", fontSize: "0.7rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ color: "#3A4560", fontSize: "0.78rem", textAlign: "center", marginTop: 20, fontFamily: "'DM Sans', sans-serif" }}>
           No results for &ldquo;{query}&rdquo;
         </div>
       )}
@@ -1183,11 +1184,11 @@ const SearchPanel = ({
         >
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: r.matchType === "content" ? 2 : 0 }}>
             <span style={{ fontSize: "0.8rem" }}>{getFileIcon(r.fileName)}</span>
-            <span style={{ color: "#C8D5E8", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>
+            <span style={{ color: "#C8D5E8", fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>
               {r.fileName}
             </span>
             <span style={{
-              marginLeft: "auto", fontSize: "0.58rem",
+              marginLeft: "auto", fontSize: "0.66rem",
               fontFamily: "'JetBrains Mono', monospace",
               color: r.matchType === "name" ? "#00D4E8" : "#a78bfa",
               background: r.matchType === "name" ? "rgba(0,212,232,0.1)" : "rgba(167,139,250,0.1)",
@@ -1198,7 +1199,7 @@ const SearchPanel = ({
           </div>
           {r.matchType === "content" && (
             <div style={{
-              color: "#5A6888", fontSize: "0.67rem",
+              color: "#5A6888", fontSize: "0.75rem",
               fontFamily: "'JetBrains Mono', monospace",
               paddingLeft: 22, overflow: "hidden",
               textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -1237,7 +1238,7 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
     {/* Header */}
     <div style={{
       padding: "8px 12px",
-      fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace",
+      fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace",
       color: "#2A3555", letterSpacing: "0.1em", textTransform: "uppercase",
       borderBottom: "1px solid #1A2033", flexShrink: 0,
       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -1250,7 +1251,7 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
     <div style={{ flex: 1, overflow: "auto", paddingTop: 4 }}>
       {activePanel === "explorer" && fileTree.length === 0 && !isLoading && (
         <div style={{ padding: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          <div style={{ color: "#2A3555", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
+          <div style={{ color: "#2A3555", fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
             No folder open
           </div>
           <button
@@ -1260,7 +1261,7 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
               background: "rgba(0,212,232,0.1)", border: "1px solid rgba(0,212,232,0.3)",
               borderRadius: 6, padding: "8px 16px",
               color: "#00D4E8", cursor: "pointer",
-              fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif",
+              fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif",
               transition: "all 0.2s",
             }}
             onMouseEnter={e => {
@@ -1275,20 +1276,20 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
             <span>📁</span>
             <span>Open Folder</span>
           </button>
-          <div style={{ color: "#1A2033", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace", textAlign: "center", marginTop: 8 }}>
+          <div style={{ color: "#1A2033", fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace", textAlign: "center", marginTop: 8 }}>
             or drag & drop a folder
           </div>
         </div>
       )}
       {activePanel === "explorer" && isLoading && (
-        <div style={{ padding: 16, color: "#00D4E8", fontSize: "0.75rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
+        <div style={{ padding: 16, color: "#00D4E8", fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif", textAlign: "center" }}>
           Loading folder...
         </div>
       )}
       {activePanel === "explorer" && fileTree.length > 0 && (
         <>
           {folderName && (
-            <div style={{ padding: "4px 12px", fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", borderBottom: "1px solid #1A2033", marginBottom: 4 }}>
+            <div style={{ padding: "4px 12px", fontSize: "0.78rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", borderBottom: "1px solid #1A2033", marginBottom: 4 }}>
               📁 {folderName}
             </div>
           )}
@@ -1302,10 +1303,10 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
       )}
       {activePanel === "git" && (
         <div style={{ padding: 12 }}>
-          <div style={{ color: "#00E5A0", fontSize: "0.72rem", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
+          <div style={{ color: "#00E5A0", fontSize: "0.78rem", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
             ⎇ main
           </div>
-          <div style={{ color: "#2A3555", fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif" }}>
+          <div style={{ color: "#2A3555", fontSize: "0.78rem", fontFamily: "'DM Sans', sans-serif" }}>
             No changes to commit.
           </div>
         </div>
@@ -1332,24 +1333,23 @@ const SidebarPanel = ({ activePanel, fileTree, onFileClick, activeFileId, sideba
 interface TopBarProps {
   voiceOpen: boolean;
   onVoiceToggle: () => void;
-  activeMode?: AIMode;
   terminalOpen?: boolean;
   onTerminalToggle?: () => void;
 }
 
-const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask", terminalOpen, onTerminalToggle }: TopBarProps): React.ReactElement => (
+const TopBar = ({ voiceOpen, onVoiceToggle, terminalOpen, onTerminalToggle }: TopBarProps): React.ReactElement => (
   <div style={{
-    height: 100, background: "#080B12",
+    height: 48, background: "#080B12",
     borderBottom: "1px solid #1A2033",
     display: "flex", alignItems: "center",
-    padding: "0 16px", gap: 16, flexShrink: 0,
+    padding: "0 12px", gap: 12, flexShrink: 0,
   }}>
     {/* Logo */}
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 8 }}>
+    <div style={{ display: "flex", alignItems: "center", height: "100%", paddingLeft: 4, paddingRight: 8 }}>
       <img
         src="/logo3.png"
         alt="Señorita"
-        style={{ width: 200, height: "auto", objectFit: "contain", flexShrink: 0, display: "block", mixBlendMode: "screen" }}
+        style={{ width: 120, height: "auto", objectFit: "contain", flexShrink: 0, display: "block", mixBlendMode: "screen" }}
       />
     </div>
 
@@ -1360,7 +1360,7 @@ const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask", terminalOpen, on
         onClick={() => { if (item === "Terminal") onTerminalToggle?.(); }}
         style={{
           fontFamily: "'Inter', 'DM Sans', sans-serif",
-          fontSize: "0.82rem",
+          fontSize: "0.88rem",
           fontWeight: 600,
           color: item === "Terminal" && terminalOpen ? "#00D4E8" : "#8A9BB8",
           cursor: "pointer",
@@ -1386,92 +1386,71 @@ const TopBar = ({ voiceOpen, onVoiceToggle, activeMode = "Ask", terminalOpen, on
 
     {/* Right side */}
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6,
-        background: "#111520", border: "1px solid #1A2033",
-        borderRadius: 4, padding: "4px 10px",
-        cursor: "pointer",
-      }}>
-        <span style={{ color: "#2A3555", fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace" }}>⌘</span>
-        <span style={{ color: "#3A4560", fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif" }}>Command Palette</span>
-        <span style={{ color: "#2A3555", fontSize: "0.65rem", fontFamily: "'JetBrains Mono', monospace" }}>K</span>
-      </div>
-
-      {/* Active mode badge */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 5,
-        background: activeMode === "Debug" ? "rgba(251,191,36,0.1)"
-          : activeMode === "Create" ? "rgba(74,222,128,0.1)"
-          : activeMode === "Deep Thinking" ? "rgba(139,92,246,0.1)"
-          : "rgba(0,212,232,0.08)",
-        border: `1px solid ${
-          activeMode === "Debug" ? "rgba(251,191,36,0.35)"
-          : activeMode === "Create" ? "rgba(74,222,128,0.35)"
-          : activeMode === "Deep Thinking" ? "rgba(139,92,246,0.35)"
-          : "rgba(0,212,232,0.25)"
-        }`,
-        borderRadius: 5, padding: "3px 9px",
-        color: activeMode === "Debug" ? "#fbbf24"
-          : activeMode === "Create" ? "#4ade80"
-          : activeMode === "Deep Thinking" ? "#a78bfa"
-          : "#00D4E8",
-        fontSize: "0.65rem",
-        fontFamily: "'JetBrains Mono', monospace",
-        letterSpacing: "0.03em",
-        userSelect: "none",
-      }}>
-        <span style={{ fontSize: "0.6rem" }}>
-          {activeMode === "Debug" ? "⚡" : activeMode === "Create" ? "✚" : activeMode === "Deep Thinking" ? "◈" : "✦"}
-        </span>
-        {activeMode}
-      </div>
-
       {/* Voice toggle button */}
       <button
         onClick={onVoiceToggle}
         title="Toggle Voice Panel (Ctrl+Shift+V)"
         style={{
-          display: "flex", alignItems: "center", gap: 6,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          height: 32, padding: "0 12px",
           background: voiceOpen ? "rgba(0,212,232,0.12)" : "transparent",
           border: `1px solid ${voiceOpen ? "rgba(0,212,232,0.4)" : "#1A2033"}`,
-          borderRadius: 5, padding: "4px 10px",
-          color: voiceOpen ? "#00D4E8" : "#3A4560",
+          borderRadius: 6,
+          color: voiceOpen ? "#00D4E8" : "#5A6888",
           cursor: "pointer", transition: "all 0.2s",
-          fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif",
+          fontSize: "0.82rem", fontFamily: "'DM Sans', sans-serif",
         }}
         onMouseEnter={e => {
           if (!voiceOpen) {
             e.currentTarget.style.color = "#00D4E8";
             e.currentTarget.style.borderColor = "rgba(0,212,232,0.3)";
+            e.currentTarget.style.background = "rgba(0,212,232,0.05)";
           }
         }}
         onMouseLeave={e => {
           if (!voiceOpen) {
-            e.currentTarget.style.color = "#3A4560";
+            e.currentTarget.style.color = "#5A6888";
             e.currentTarget.style.borderColor = "#1A2033";
+            e.currentTarget.style.background = "transparent";
           }
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none"
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
           stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-          <rect x="4" y="0.5" width="5" height="8" rx="2.5" />
-          <path d="M1 6.5a5.5 5.5 0 0 0 11 0" />
-          <line x1="6.5" y1="11" x2="6.5" y2="12.5" />
-          <line x1="4.5" y1="12.5" x2="8.5" y2="12.5" />
+          <rect x="4.5" y="1" width="5" height="7.5" rx="2.5" />
+          <path d="M2 7a5 5 0 0 0 10 0" />
+          <line x1="7" y1="12" x2="7" y2="13.5" />
+          <line x1="5" y1="13.5" x2="9" y2="13.5" />
         </svg>
         <span>Voice</span>
       </button>
 
-      <div style={{
-        width: 26, height: 26, borderRadius: "50%",
-        background: "rgba(0,212,232,0.1)", border: "1px solid rgba(0,212,232,0.2)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "#00D4E8", fontSize: "0.65rem",
-        fontFamily: "'JetBrains Mono', monospace",
-        cursor: "pointer",
-      }}>
+      {/* Settings button */}
+      <button
+        title="Settings"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: 32, height: 32,
+          background: "transparent",
+          border: "1px solid #1A2033",
+          borderRadius: 6,
+          color: "#5A6888",
+          cursor: "pointer", transition: "all 0.2s",
+          fontSize: "0.9rem",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = "#00D4E8";
+          e.currentTarget.style.borderColor = "rgba(0,212,232,0.3)";
+          e.currentTarget.style.background = "rgba(0,212,232,0.05)";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = "#5A6888";
+          e.currentTarget.style.borderColor = "#1A2033";
+          e.currentTarget.style.background = "transparent";
+        }}
+      >
         ⚙
-      </div>
+      </button>
     </div>
   </div>
 );
@@ -1496,8 +1475,8 @@ const EmptyState = (): React.ReactElement => (
     <div style={{ fontFamily: "'Syne', sans-serif", fontSize: "0.9rem", fontWeight: 600, color: "#3A4560", marginBottom: 6 }}>
       No file open
     </div>
-    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.78rem", color: "#2A3555", textAlign: "center", maxWidth: 220 }}>
-      Select a file from the explorer<br />or press <kbd style={{ background: "#1A2033", padding: "1px 5px", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", color: "#4DD9E8" }}>⌘K</kbd> to open
+    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "0.85rem", color: "#2A3555", textAlign: "center", maxWidth: 220 }}>
+      Select a file from the explorer<br />or press <kbd style={{ background: "#1A2033", padding: "1px 5px", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", color: "#4DD9E8" }}>⌘K</kbd> to open
     </div>
   </div>
 );
@@ -1677,10 +1656,10 @@ function TerminalPanel({ height, onHeightChange }: { height: number; onHeightCha
       />
       {/* Title bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 28, background: "#060810", borderBottom: "1px solid #1A2033", flexShrink: 0 }}>
-        <span style={{ fontSize: "0.62rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", letterSpacing: "0.08em", textTransform: "uppercase" }}>TERMINAL</span>
-        <span style={{ fontSize: "0.62rem", fontFamily: "'JetBrains Mono', monospace", color: "#2A3555" }}>bash</span>
+        <span style={{ fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", color: "#00D4E8", letterSpacing: "0.08em", textTransform: "uppercase" }}>TERMINAL</span>
+        <span style={{ fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", color: "#2A3555" }}>bash</span>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: "0.7rem", color: "#2A3555", cursor: "pointer", padding: "2px 4px" }}
+        <span style={{ fontSize: "0.78rem", color: "#2A3555", cursor: "pointer", padding: "2px 4px" }}
           onMouseEnter={e => (e.currentTarget.style.color = "#C8D5E8")}
           onMouseLeave={e => (e.currentTarget.style.color = "#2A3555")}
           onClick={() => setLines([])} title="Clear">⌫</span>
@@ -1688,7 +1667,7 @@ function TerminalPanel({ height, onHeightChange }: { height: number; onHeightCha
       {/* Output area */}
       <div
         onClick={() => inputRef.current?.focus()}
-        style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", lineHeight: 1.6, cursor: "text" }}
+        style={{ flex: 1, overflowY: "auto", padding: "8px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.85rem", lineHeight: 1.6, cursor: "text" }}
       >
         {lines.map((l, i) => (
           <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
@@ -1717,7 +1696,7 @@ function TerminalPanel({ height, onHeightChange }: { height: number; onHeightCha
             spellCheck={false}
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
-              color: "#EEF4FF", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem",
+              color: "#EEF4FF", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.85rem",
               caretColor: "#00D4E8", padding: 0,
             }}
           />
@@ -1744,7 +1723,7 @@ export default function EditorPage(): React.ReactElement {
   const [pendingAction, setPendingAction] = useState<CodeAction | null>(null);
 
   /* ---- File system state ---- */
-  const [fileTree, setFileTree] = useState<FileNode[]>([]); // Empty = no folder open
+  const [fileTree, setFileTree] = useState<FileNode[]>([]); // Empty = no folder open, user opens folder first
   const [folderName, setFolderName] = useState<string>("");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [rootHandle, setRootHandle] = useState<any>(null);
@@ -1974,12 +1953,16 @@ export default function EditorPage(): React.ReactElement {
     let content = node.content || "";
     if (node.handle) {
       try {
+        console.log(`[handleFileOpen] Reading file: ${node.name}, handle exists: ${!!node.handle}`);
         const read = await readFileContent(node.handle);
+        console.log(`[handleFileOpen] Read ${node.name}: ${read.length} chars`);
         if (read) content = read;
       } catch (err) {
-        console.warn("Error reading file:", err);
+        console.warn(`[handleFileOpen] Error reading file ${node.name}:`, err);
         content = "// Could not read file — try closing and re-opening the folder";
       }
+    } else {
+      console.log(`[handleFileOpen] No handle for ${node.name}, using node.content: ${(node.content || "").length} chars`);
     }
 
     const lang = node.language || getLanguage(node.name);
@@ -2214,7 +2197,7 @@ export default function EditorPage(): React.ReactElement {
         }}
       >
         {/* Top menu bar */}
-        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} activeMode={activeMode} terminalOpen={terminalOpen} onTerminalToggle={() => setTerminalOpen(v => !v)} />
+        <TopBar voiceOpen={voiceOpen} onVoiceToggle={() => setVoiceOpen(v => !v)} terminalOpen={terminalOpen} onTerminalToggle={() => setTerminalOpen(v => !v)} />
 
         {/* Main area */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -2260,7 +2243,7 @@ export default function EditorPage(): React.ReactElement {
                       borderRadius: 4, margin: "0 8px",
                       padding: "3px 10px",
                       color: showMarkdown ? "#00D4E8" : "#3A4560",
-                      fontSize: "0.7rem", fontFamily: "'DM Sans', sans-serif",
+                      fontSize: "0.78rem", fontFamily: "'DM Sans', sans-serif",
                       cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap",
                     }}
                     onMouseEnter={e => { if (!showMarkdown) { e.currentTarget.style.color = "#00D4E8"; e.currentTarget.style.borderColor = "rgba(0,212,232,0.3)"; }}}
@@ -2314,12 +2297,12 @@ export default function EditorPage(): React.ReactElement {
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     flexShrink: 0,
                   }}>
-                    <span style={{ fontSize: "0.62rem", fontFamily: "'JetBrains Mono', monospace", color: "#2A3555", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    <span style={{ fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", color: "#2A3555", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                       Markdown Preview
                     </span>
                     <span
                       onClick={() => setShowMarkdown(false)}
-                      style={{ color: "#2A3555", fontSize: "0.7rem", cursor: "pointer", transition: "color 0.15s" }}
+                      style={{ color: "#2A3555", fontSize: "0.78rem", cursor: "pointer", transition: "color 0.15s" }}
                       onMouseEnter={(e: React.MouseEvent<HTMLSpanElement>) => (e.currentTarget.style.color = "#C8D5E8")}
                       onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => (e.currentTarget.style.color = "#2A3555")}
                     >
@@ -2395,6 +2378,33 @@ export default function EditorPage(): React.ReactElement {
                   onSummarize={handleSummarize}
                   onModeChange={setActiveMode}
                   injectCodeRef={injectCodeRef}
+                  onOpenFile={(filename) => {
+                    // Find file in tabs or registry and open it
+                    const existingTab = tabs.find(t => 
+                      t.name === filename || 
+                      t.id.endsWith(filename) ||
+                      t.name.toLowerCase() === filename.toLowerCase()
+                    );
+                    
+                    if (existingTab) {
+                      setActiveTabId(existingTab.id);
+                    } else {
+                      // Try to find in registry
+                      getFileFromRegistry(filename).then((registryFile) => {
+                        if (registryFile) {
+                          const newTab: Tab = {
+                            id: registryFile.path,
+                            name: registryFile.filename,
+                            language: getLanguage(registryFile.filename),
+                            content: registryFile.content,
+                            isDirty: false,
+                          };
+                          setTabs(prev => [...prev, newTab]);
+                          setActiveTabId(registryFile.path);
+                        }
+                      });
+                    }
+                  }}
                   onCodeAction={(action) => {
                     // Handle multi-file edits - apply pending edit to each target file
                     if (action.edits && action.edits.length > 0) {
@@ -2502,10 +2512,10 @@ export default function EditorPage(): React.ReactElement {
                     background: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     boxShadow: "0 0 8px rgba(139,92,246,0.4)",
-                    fontSize: "0.6rem", flexShrink: 0,
+                    fontSize: "0.68rem", flexShrink: 0,
                   }}>✦</div>
                   <span style={{
-                    fontSize: "0.72rem", fontFamily: "'DM Sans', sans-serif",
+                    fontSize: "0.78rem", fontFamily: "'DM Sans', sans-serif",
                     color: summaryLoading ? "#5A6888" : "#C8D5E8", fontWeight: 500,
                   }}>
                     {summaryLoading ? "Analyzing conversation…" : (summaryData?.title ?? "Session Summary")}
@@ -2517,68 +2527,224 @@ export default function EditorPage(): React.ReactElement {
                     </svg>
                   )}
                 </div>
-                <button
-                  onClick={() => setSummaryOpen(false)}
-                  style={{
-                    background: "transparent", border: "1px solid #1A2033",
-                    color: "#3A4560", borderRadius: 5, padding: "3px 8px",
-                    cursor: "pointer", fontSize: "0.68rem",
-                    fontFamily: "'JetBrains Mono', monospace", transition: "all 0.15s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.color = "#C8D5E8"; e.currentTarget.style.borderColor = "#2A3555"; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = "#3A4560"; e.currentTarget.style.borderColor = "#1A2033"; }}
-                >
-                  ✕ close
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {/* Export button */}
+                  {summaryData && !summaryLoading && (
+                    <button
+                      onClick={() => {
+                        if (!summaryData) return;
+                        let md = `# ${summaryData.title}\n\n`;
+                        md += `${summaryData.overview}\n\n`;
+                        md += `## Session Stats\n\n`;
+                        md += `| Metric | Value |\n|--------|-------|\n`;
+                        md += `| Total Messages | ${summaryData.stats.total_messages} |\n`;
+                        md += `| User Messages | ${summaryData.stats.user_messages} |\n`;
+                        md += `| AI Replies | ${summaryData.stats.ai_messages} |\n`;
+                        md += `| Code Blocks | ${summaryData.stats.code_blocks} |\n\n`;
+                        if (summaryData.intent_breakdown.length > 0) {
+                          md += `## Intent Breakdown\n\n`;
+                          summaryData.intent_breakdown.forEach(ib => {
+                            md += `- **${ib.intent.toUpperCase()}** (${ib.count}): ${ib.description}\n`;
+                          });
+                          md += `\n`;
+                        }
+                        if (summaryData.key_actions.length > 0) {
+                          md += `## Key Actions\n\n`;
+                          summaryData.key_actions.forEach((ka, i) => {
+                            md += `${i + 1}. **${ka.action}** - ${ka.detail}\n`;
+                          });
+                          md += `\n`;
+                        }
+                        if (summaryData.code_changes && summaryData.code_changes.length > 0) {
+                          md += `## Code Changes\n\n`;
+                          summaryData.code_changes.forEach(cc => {
+                            md += `- **${cc.heading}** (${cc.filename}): ${cc.description}\n`;
+                          });
+                          md += `\n`;
+                        }
+                        if (summaryData.insights.length > 0) {
+                          md += `## Insights\n\n`;
+                          summaryData.insights.forEach(ins => {
+                            md += `### ${ins.icon} ${ins.title}\n\n${ins.body}\n\n`;
+                          });
+                        }
+                        if (summaryData.flowchart) {
+                          md += `## Conversation Flow\n\n\`\`\`mermaid\n${summaryData.flowchart}\n\`\`\`\n`;
+                        }
+                        md += `\n---\n*Generated by Senorita AI on ${new Date().toLocaleString()}*\n`;
+                        const blob = new Blob([md], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `senorita-summary-${Date.now()}.md`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }}
+                      style={{
+                        background: "rgba(139,92,246,0.1)",
+                        border: "1px solid rgba(139,92,246,0.3)",
+                        color: "#8B5CF6",
+                        borderRadius: 5,
+                        padding: "3px 8px",
+                        cursor: "pointer",
+                        fontSize: "0.75rem",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        transition: "all 0.15s",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.color = "#A78BFA";
+                        e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)";
+                        e.currentTarget.style.background = "rgba(139,92,246,0.15)";
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.color = "#8B5CF6";
+                        e.currentTarget.style.borderColor = "rgba(139,92,246,0.3)";
+                        e.currentTarget.style.background = "rgba(139,92,246,0.1)";
+                      }}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      >
+                        <path d="M6 1v8M3 6l3 3 3-3" />
+                        <path d="M1 10h10" />
+                      </svg>
+                      export .md
+                    </button>
+                  )}
+                  {/* Close button */}
+                  <button
+                    onClick={() => setSummaryOpen(false)}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid #1A2033",
+                      color: "#3A4560",
+                      borderRadius: 5,
+                      padding: "3px 8px",
+                      cursor: "pointer",
+                      fontSize: "0.75rem",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.color = "#C8D5E8";
+                      e.currentTarget.style.borderColor = "#2A3555";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = "#3A4560";
+                      e.currentTarget.style.borderColor = "#1A2033";
+                    }}
+                  >
+                    close
+                  </button>
+                </div>
               </div>
 
               {/* Summary body */}
               <div style={{ flex: 1, overflow: "hidden" }}>
                 {summaryLoading && (
-                  <div style={{
-                    height: "100%", display: "flex", flexDirection: "column",
-                    alignItems: "center", justifyContent: "center", gap: 20,
-                    background: "#08090F",
-                  }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 20,
+                      background: "#08090F",
+                    }}
+                  >
                     {/* Animated orb */}
                     <div style={{ position: "relative" }}>
-                      <div style={{
-                        width: 64, height: 64, borderRadius: "50%",
-                        background: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(109,40,217,0.15))",
-                        border: "1px solid rgba(139,92,246,0.3)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        boxShadow: "0 0 40px rgba(139,92,246,0.2)",
-                      }}>
-                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"
-                          style={{ animation: "vpSpin 2s linear infinite" }}>
-                          <circle cx="14" cy="14" r="11" stroke="rgba(139,92,246,0.6)" strokeWidth="1.5" strokeDasharray="40 28" />
-                          <circle cx="14" cy="14" r="6" stroke="rgba(139,92,246,0.3)" strokeWidth="1" strokeDasharray="18 12" />
+                      <div
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: "50%",
+                          background:
+                            "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(109,40,217,0.15))",
+                          border: "1px solid rgba(139,92,246,0.3)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 0 40px rgba(139,92,246,0.2)",
+                        }}
+                      >
+                        <svg
+                          width="28"
+                          height="28"
+                          viewBox="0 0 28 28"
+                          fill="none"
+                          style={{ animation: "vpSpin 2s linear infinite" }}
+                        >
+                          <circle
+                            cx="14"
+                            cy="14"
+                            r="11"
+                            stroke="rgba(139,92,246,0.6)"
+                            strokeWidth="1.5"
+                            strokeDasharray="40 28"
+                          />
+                          <circle
+                            cx="14"
+                            cy="14"
+                            r="6"
+                            stroke="rgba(139,92,246,0.3)"
+                            strokeWidth="1"
+                            strokeDasharray="18 12"
+                          />
                         </svg>
                       </div>
                     </div>
                     <div style={{ textAlign: "center" }}>
-                      <div style={{
-                        fontFamily: "'Syne', sans-serif", fontSize: "0.9rem",
-                        fontWeight: 700, color: "#C8D5E8", marginBottom: 6,
-                      }}>
+                      <div
+                        style={{
+                          fontFamily: "'Syne', sans-serif",
+                          fontSize: "0.9rem",
+                          fontWeight: 700,
+                          color: "#C8D5E8",
+                          marginBottom: 6,
+                        }}
+                      >
                         Analyzing your session
                       </div>
-                      <div style={{
-                        fontSize: "0.72rem", color: "#3A4560",
-                        fontFamily: "'DM Sans', sans-serif", lineHeight: 1.6,
-                      }}>
-                        Building flowcharts, extracting insights<br />and summarizing your conversation…
+                      <div
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#3A4560",
+                          fontFamily: "'DM Sans', sans-serif",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        Building flowcharts, extracting insights
+                        <br />
+                        and summarizing your conversation…
                       </div>
                     </div>
                     {/* Animated dots */}
                     <div style={{ display: "flex", gap: 6 }}>
-                      {[0,1,2].map(i => (
-                        <div key={i} style={{
-                          width: 6, height: 6, borderRadius: "50%",
-                          background: "#8B5CF6",
-                          animation: `vpWaveBar 1.2s ease-in-out infinite ${i * 0.2}s`,
-                          transformOrigin: "center",
-                        }} />
+                      {[0, 1, 2].map(i => (
+                        <div
+                          key={i}
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: "#8B5CF6",
+                            animation: `vpWaveBar 1.2s ease-in-out infinite ${i * 0.2}s`,
+                            transformOrigin: "center",
+                          }}
+                        />
                       ))}
                     </div>
                   </div>
@@ -2590,22 +2756,42 @@ export default function EditorPage(): React.ReactElement {
                   />
                 )}
                 {!summaryLoading && !summaryData && (
-                  <div style={{
-                    height: "100%", display: "flex", alignItems: "center",
-                    justifyContent: "center", flexDirection: "column", gap: 12,
-                  }}>
-                    <span style={{ fontSize: "2rem" }}>⚠</span>
-                    <span style={{ color: "#FF4D6D", fontSize: "0.8rem", fontFamily: "'DM Sans', sans-serif" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: "2rem" }}>
+                      
+                    </span>
+                    <span
+                      style={{
+                        color: "#FF4D6D",
+                        fontSize: "0.8rem",
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
                       Failed to generate summary. Is the backend running?
                     </span>
                     <button
                       onClick={() => setSummaryOpen(false)}
                       style={{
-                        background: "transparent", border: "1px solid #1A2033",
-                        color: "#5A6888", borderRadius: 6, padding: "6px 14px",
-                        cursor: "pointer", fontSize: "0.75rem",
+                        background: "transparent",
+                        border: "1px solid #1A2033",
+                        color: "#5A6888",
+                        borderRadius: 6,
+                        padding: "6px 14px",
+                        cursor: "pointer",
+                        fontSize: "0.82rem",
                       }}
-                    >Close</button>
+                    >
+                      Close
+                    </button>
                   </div>
                 )}
               </div>
@@ -2627,15 +2813,15 @@ export default function EditorPage(): React.ReactElement {
               animation: "editorFadeIn 0.25s ease forwards",
             }}
           >
-            <span style={{ color: "#00D4E8", fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>🎙</span>
+            <span style={{ color: "#00D4E8", fontSize: "0.78rem", fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>🎙</span>
             <span style={{
-              color: "#8A9BB8", fontSize: "0.72rem",
+              color: "#8A9BB8", fontSize: "0.78rem",
               fontFamily: "'DM Sans', sans-serif",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>{lastTranscript}</span>
             <span
               onClick={e => { e.stopPropagation(); setLastTranscript(""); }}
-              style={{ color: "#3A4560", fontSize: "0.65rem", cursor: "pointer", flexShrink: 0 }}
+              style={{ color: "#3A4560", fontSize: "0.72rem", cursor: "pointer", flexShrink: 0 }}
             >✕</span>
           </div>
         )}

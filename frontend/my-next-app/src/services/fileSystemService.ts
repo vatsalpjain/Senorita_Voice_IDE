@@ -159,13 +159,41 @@ export async function readDirectory(
 
 /**
  * Read file content from a FileSystemFileHandle
+ * Returns empty string for binary files or on error
  */
 export async function readFileContent(handle: FileSystemFileHandle): Promise<string> {
   try {
+    // Request permission if needed (for persisted handles)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleWithPermission = handle as any;
+    if (handleWithPermission.queryPermission) {
+      const permission = await handleWithPermission.queryPermission({ mode: 'read' });
+      if (permission !== 'granted') {
+        const requestResult = await handleWithPermission.requestPermission({ mode: 'read' });
+        if (requestResult !== 'granted') {
+          console.warn(`[readFileContent] Permission denied for ${handle.name}`);
+          return `// Permission denied: ${handle.name}`;
+        }
+      }
+    }
+    
     const file = await handle.getFile();
-    return await file.text();
+    
+    // Skip binary files based on MIME type
+    const binaryTypes = [
+      'image/', 'audio/', 'video/', 'application/octet-stream',
+      'application/zip', 'application/x-tar', 'application/gzip',
+      'application/pdf', 'application/x-executable',
+    ];
+    if (binaryTypes.some(t => file.type.startsWith(t))) {
+      console.log(`[readFileContent] Skipping binary file: ${file.name} (${file.type})`);
+      return `// Binary file: ${file.name}`;
+    }
+    
+    const content = await file.text();
+    return content;
   } catch (err) {
-    console.error("Error reading file:", err);
+    console.error(`[readFileContent] Error reading file ${handle.name}:`, err);
     return "";
   }
 }

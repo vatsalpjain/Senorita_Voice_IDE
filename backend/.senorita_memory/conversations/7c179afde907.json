@@ -1,0 +1,40 @@
+{
+  "id": "7c179afde907",
+  "title": "New Conversation",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you tell me what all agents are present and what all agents do? Explain each and every function.",
+      "timestamp": "2026-02-28T08:20:32.576743",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "coding_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "There are multiple agents present in the project: Context Agent, Coding Agent, Debug Agent, and Workflow Agent, along with a Main Orchestrator. \n\nThe `context_agent.py` file contains the Context Agent, which runs before every other agent and retrieves file content, surrounding lines, project structure, imports, and related files. It has functions like `detect_language` to detect the programming language from a file extension, `read_file_safe` to read a file's content safely, and `get_lines_around_cursor` to extract lines around the cursor position for context.\n\nThe `coding_agent.py` file contains the Coding Agent, which handles code generation, insertion, editing, and refactoring. It has functions like `coding_agent` to generate structured code actions based on user voice commands and file context, `_build_coding_prompt` to build a prompt with all relevant context, and `_parse_coding_response` to parse the JSON response from the LLM. \n\nThe Debug Agent and Workflow Agent are not shown in the provided code, but they are mentioned in the `__init__.py` file as part of the Senorita Agentic Workflow. The Main Orchestrator is also not shown, but it is likely responsible for coordinating the actions of the other agents. \n\nEach agent has its own specific functions and responsibilities, and they work together to provide a comprehensive development environment.",
+      "timestamp": "2026-02-28T08:20:32.579175",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "And what is the file that orchestrates all the agents",
+      "timestamp": "2026-02-28T08:22:07.967577",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "context_agent.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "The file that orchestrates all the agents is likely `__init__.py` in the `backend/app/agents/` directory, as mentioned in the `__init__.py` file: \"Senorita Agentic Workflow - LangGraph-based multi-agent system Agents: Context, Coding, Debug, Workflow + Main Orchestrator\".",
+      "timestamp": "2026-02-28T08:22:07.969976",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2026-02-28T08:20:32.573668",
+  "updated_at": "2026-02-28T08:22:07.969994",
+  "project_root": "",
+  "metadata": {}
+}

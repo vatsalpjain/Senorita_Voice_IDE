@@ -38,6 +38,7 @@ export interface VoicePanelProps {
   onCodeAction?: (action: CodeActionData) => void;
   onSummarize?: (messages: ChatMessage[], codeChanges: CodeChange[]) => void;
   onModeChange?: (mode: AIMode) => void;
+  onOpenFile?: (filename: string) => void;
   injectCodeRef?: React.MutableRefObject<((code: string) => void) | null>;
 }
 
@@ -78,6 +79,21 @@ const VP_STYLES = `
   @keyframes vpBlink {
     0%,100% { opacity:1; }
     50%     { opacity:0; }
+  }
+  
+  /* Subtle scrollbar for textarea */
+  .vp-textarea-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .vp-textarea-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .vp-textarea-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0,212,232,0.25);
+    border-radius: 4px;
+  }
+  .vp-textarea-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,212,232,0.4);
   }
 `;
 
@@ -127,12 +143,131 @@ function IntentBadge({ intent }: { intent: string }) {
   return (
     <span style={{
       background: m.bg, color: m.color,
-      fontSize: "0.58rem", fontFamily: "'JetBrains Mono', monospace",
+      fontSize: "0.66rem", fontFamily: "'JetBrains Mono', monospace",
       padding: "1px 6px", borderRadius: 100,
       letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0,
     }}>
       {intent}
     </span>
+  );
+}
+
+/* ============================================================
+   MODE DROPUP
+   ============================================================ */
+const MODE_CONFIG: Record<AIMode, { icon: string; color: string; bg: string }> = {
+  "Ask": { icon: "✦", color: "#00D4E8", bg: "rgba(0,212,232,0.1)" },
+  "Debug": { icon: "⚡", color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
+  "Create": { icon: "✚", color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
+  "Deep Thinking": { icon: "◈", color: "#a78bfa", bg: "rgba(139,92,246,0.1)" },
+};
+
+function ModeDropup({ mode, onModeChange }: { mode: AIMode; onModeChange: (m: AIMode) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const cfg = MODE_CONFIG[mode];
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      {/* Trigger button */}
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: "flex", alignItems: "center", gap: 5,
+          background: cfg.bg,
+          border: "none",
+          borderRadius: 5,
+          padding: "4px 10px",
+          color: cfg.color,
+          fontSize: "0.88rem",
+          fontFamily: "'JetBrains Mono', monospace",
+          cursor: "pointer",
+          transition: "all 0.15s",
+        }}
+      >
+        <span>{cfg.icon}</span>
+        <span>{mode}</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" 
+          stroke={cfg.color} strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+          <polyline points="2,6 5,3 8,6" />
+        </svg>
+      </button>
+
+      {/* Dropup menu */}
+      {open && (
+        <div style={{
+          position: "absolute",
+          bottom: "calc(100% + 6px)",
+          left: 0,
+          background: "#0E111A",
+          border: "1px solid #1A2033",
+          borderRadius: 8,
+          padding: "4px",
+          minWidth: 140,
+          boxShadow: "0 -4px 20px rgba(0,0,0,0.4)",
+          zIndex: 100,
+          animation: "vpSlideIn 0.15s ease forwards",
+        }}>
+          {(Object.keys(MODE_CONFIG) as AIMode[]).map((m) => {
+            const c = MODE_CONFIG[m];
+            const isActive = m === mode;
+            return (
+              <button
+                key={m}
+                onClick={() => { onModeChange(m); setOpen(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  width: "100%",
+                  background: isActive ? c.bg : "transparent",
+                  border: "none",
+                  borderRadius: 5,
+                  padding: "7px 10px",
+                  color: isActive ? c.color : "#8A9BB8",
+                  fontSize: "0.88rem",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  cursor: "pointer",
+                  transition: "all 0.12s",
+                  textAlign: "left",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                    e.currentTarget.style.color = c.color;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "#8A9BB8";
+                  }
+                }}
+              >
+                <span style={{ color: c.color }}>{c.icon}</span>
+                <span>{m}</span>
+                {isActive && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" 
+                    stroke={c.color} strokeWidth="1.8" strokeLinecap="round" style={{ marginLeft: "auto" }}>
+                    <polyline points="2,5 4,7 8,3" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -174,7 +309,7 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 
         {/* Message text */}
         <p style={{
-          fontSize: "0.78rem", lineHeight: 1.55, margin: 0,
+          fontSize: "0.93rem", lineHeight: 1.55, margin: 0,
           color: isErr ? "#FF4D6D" : isUser ? "#C8D5E8" : "#9BAAC8",
           fontFamily: "'DM Sans', sans-serif",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
@@ -195,7 +330,7 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
                 background: "transparent",
                 border: "1px solid #1A2033",
                 borderRadius: 4, padding: "2px 8px",
-                color: "#3A4560", fontSize: "0.65rem",
+                color: "#3A4560", fontSize: "0.82rem",
                 fontFamily: "'JetBrains Mono', monospace",
                 cursor: "pointer", transition: "all 0.15s",
                 display: "flex", alignItems: "center", gap: 5,
@@ -213,7 +348,7 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
               <pre style={{
                 marginTop: 6, background: "#08090F",
                 border: "1px solid #1A2033", borderRadius: 6,
-                padding: "8px 10px", fontSize: "0.7rem", color: "#4DD9E8",
+                padding: "8px 10px", fontSize: "0.88rem", color: "#4DD9E8",
                 fontFamily: "'JetBrains Mono', monospace",
                 whiteSpace: "pre-wrap", wordBreak: "break-all",
                 maxHeight: 180, overflowY: "auto", margin: 0,
@@ -226,7 +361,7 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 
         {/* Mock indicator */}
         {msg.usedMock && (
-          <div style={{ marginTop: 6, fontSize: "0.6rem", color: "#2A3555", fontFamily: "'JetBrains Mono', monospace" }}>
+          <div style={{ marginTop: 6, fontSize: "0.68rem", color: "#2A3555", fontFamily: "'JetBrains Mono', monospace" }}>
             mock · backend offline
           </div>
         )}
@@ -234,11 +369,11 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 
       {/* Timestamp + re-run */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, paddingRight: isUser ? 2 : 0, paddingLeft: isUser ? 0 : 2 }}>
-        <span style={{ fontSize: "0.6rem", color: "#2A3555", fontFamily: "'JetBrains Mono', monospace" }}>{ts}</span>
+        <span style={{ fontSize: "0.68rem", color: "#2A3555", fontFamily: "'JetBrains Mono', monospace" }}>{ts}</span>
         {isUser && (
           <button
             onClick={() => onRerun(msg.text)}
-            style={{ background: "none", border: "none", color: "#2A3555", fontSize: "0.62rem", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", padding: 0, transition: "color 0.15s" }}
+            style={{ background: "none", border: "none", color: "#2A3555", fontSize: "0.7rem", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", padding: 0, transition: "color 0.15s" }}
             onMouseEnter={e => (e.currentTarget.style.color = "#00D4E8")}
             onMouseLeave={e => (e.currentTarget.style.color = "#2A3555")}
           >
@@ -253,6 +388,15 @@ function ChatBubble({ msg, onRerun }: { msg: ChatMessage; onRerun: (t: string) =
 /* ============================================================
    MAIN VOICE PANEL — Chat style
    ============================================================ */
+// Activity/thinking status type
+type ActivityStatus = "idle" | "thinking" | "reading" | "searching" | "generating" | "editing";
+
+interface ActivityState {
+  status: ActivityStatus;
+  message: string;
+  files: string[]; // Files being read/edited
+}
+
 export function VoicePanel({
   editorContext,
   onAIResponse,
@@ -261,6 +405,7 @@ export function VoicePanel({
   onCodeAction,
   onSummarize,
   onModeChange,
+  onOpenFile,
 }: VoicePanelProps): React.ReactElement {
   const [messages, setMessages]         = useState<ChatMessage[]>([]);
   const [textInput, setTextInput]       = useState("");
@@ -268,6 +413,12 @@ export function VoicePanel({
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [codeChanges, setCodeChanges]   = useState<CodeChange[]>([]);
   const [mode, setMode]                 = useState<AIMode>("Ask");
+  
+  // Activity/thinking state
+  const [activity, setActivity] = useState<ActivityState>({ status: "idle", message: "", files: [] });
+  
+  // Context files (current file + any mentioned/edited files)
+  const [contextFiles, setContextFiles] = useState<Array<{ name: string; tokens: number; isEdited?: boolean }>>([]);
 
   const handleModeChange = (m: AIMode) => {
     setMode(m);
@@ -341,6 +492,21 @@ export function VoicePanel({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  /* ── Update context files from editor context ── */
+  useEffect(() => {
+    if (editorContext.filename) {
+      // Estimate tokens (~4 chars per token)
+      const tokens = Math.ceil((editorContext.currentCode?.length || 0) / 4);
+      setContextFiles(prev => {
+        const existing = prev.find(f => f.name === editorContext.filename);
+        if (existing) {
+          return prev.map(f => f.name === editorContext.filename ? { ...f, tokens } : f);
+        }
+        return [{ name: editorContext.filename, tokens, isEdited: false }];
+      });
+    }
+  }, [editorContext.filename, editorContext.currentCode]);
+
   /* ── TTS ── */
   const tts = useTTS({ rate: 1, pitch: 1, volume: 1, lang: "en-US" });
 
@@ -351,7 +517,7 @@ export function VoicePanel({
     onMessage: useCallback((msg: WSMessage) => {
       console.log("[VoicePanel] WS message received:", msg);
       dispatchWSMessage(msg as WSIncomingMsg, {
-        onAction: (action, param) => {
+        onAction: (action, _param) => {
           // Create the streaming assistant bubble
           const bubbleId = `a-${Date.now()}`;
           streamBubbleId.current = bubbleId;
@@ -368,6 +534,7 @@ export function VoicePanel({
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, streamingMsg]);
+          setActivity({ status: "generating", message: "Generating response...", files: [] });
         },
 
         onChunk: (chunk) => {
@@ -398,6 +565,7 @@ export function VoicePanel({
           streamBubbleId.current = null;
           streamChunks.current = [];
           setIsProcessing(false);
+          setActivity({ status: "idle", message: "", files: [] });
         },
 
         onError: (message) => {
@@ -410,13 +578,36 @@ export function VoicePanel({
           };
           setMessages(prev => [...prev, errMsg]);
           setIsProcessing(false);
+          setActivity({ status: "idle", message: "", files: [] });
           streamBubbleId.current = null;
           streamChunks.current = [];
+        },
+
+        // Activity status callback (real-time file reading/searching updates)
+        onActivity: (status, message, files) => {
+          console.log("[VoicePanel] onActivity:", status, message, files);
+          setActivity({
+            status: status as ActivityStatus,
+            message,
+            files,
+          });
+          // Also add files to context if they're being read
+          if (status === "reading" || status === "generating") {
+            setContextFiles(prev => {
+              const newFiles = files.filter(f => !prev.some(p => p.name.endsWith(f)));
+              if (newFiles.length === 0) return prev;
+              return [
+                ...prev,
+                ...newFiles.map(f => ({ name: f, tokens: 0, isEdited: false })),
+              ];
+            });
+          }
         },
 
         // Agentic workflow callbacks
         onIntent: (intent) => {
           console.log("[VoicePanel] onIntent:", intent);
+          setActivity({ status: "thinking", message: `Processing ${intent}...`, files: [] });
           // Create streaming bubble for agentic response
           const bubbleId = `a-${Date.now()}`;
           streamBubbleId.current = bubbleId;
@@ -677,12 +868,12 @@ export function VoicePanel({
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{
-              fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
+              fontSize: "0.68rem", letterSpacing: "0.1em", textTransform: "uppercase",
               fontFamily: "'JetBrains Mono', monospace", color: "#5A6888",
             }}>AI Assistant</span>
             {(isActive || isProcessing) && (
               <span style={{
-                fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
+                fontSize: "0.68rem", fontFamily: "'JetBrains Mono', monospace",
                 color: isActive ? "#00D4E8" : "#F6C90E",
                 transition: "color 0.3s",
               }}>
@@ -692,95 +883,6 @@ export function VoicePanel({
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Stop TTS button */}
-            {tts.isSpeaking && (
-              <button onClick={tts.stop} title="Stop speaking" style={{
-                display: "flex", alignItems: "center", gap: 4,
-                background: "rgba(0,212,232,0.1)", border: "1px solid rgba(0,212,232,0.35)",
-                color: "#00D4E8", fontSize: "0.58rem", padding: "2px 7px",
-                borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace",
-                animation: "vpMicPulse 1.8s ease-in-out infinite",
-              }}>
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="#00D4E8">
-                  <rect x="0" y="0" width="8" height="8" rx="1" />
-                </svg>
-                stop
-              </button>
-            )}
-
-            {/* Voice toggle switch (TTS) */}
-            {tts.isSupported && (
-              <div
-                onClick={() => { tts.setAutoSpeak(!tts.autoSpeak); if (tts.isSpeaking) tts.stop(); }}
-                title={tts.autoSpeak ? "Voice ON — click to turn off" : "Voice OFF — click to turn on"}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  cursor: "pointer", userSelect: "none",
-                }}
-              >
-                <span style={{
-                  fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-                  color: tts.autoSpeak ? "#00E5A0" : "#3A4560",
-                  transition: "color 0.2s",
-                }}>voice</span>
-                {/* Toggle pill */}
-                <div style={{
-                  width: 28, height: 15, borderRadius: 8,
-                  background: tts.autoSpeak ? "rgba(0,229,160,0.25)" : "#111824",
-                  border: `1px solid ${tts.autoSpeak ? "rgba(0,229,160,0.5)" : "#1A2033"}`,
-                  position: "relative", transition: "all 0.2s",
-                  flexShrink: 0,
-                }}>
-                  <div style={{
-                    position: "absolute",
-                    top: 2, left: tts.autoSpeak ? 14 : 2,
-                    width: 9, height: 9, borderRadius: "50%",
-                    background: tts.autoSpeak ? "#00E5A0" : "#3A4560",
-                    boxShadow: tts.autoSpeak ? "0 0 4px #00E5A0" : "none",
-                    transition: "all 0.2s",
-                  }} />
-                </div>
-              </div>
-            )}
-
-            {/* Wake word toggle - "Senorita" detection */}
-            <div
-              onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
-              title={wakeWordEnabled 
-                ? `Wake word ON — say "Senorita" to activate (${wakeWord.status})` 
-                : 'Wake word OFF — click to enable "Senorita" detection'}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                cursor: "pointer", userSelect: "none",
-              }}
-            >
-              <span style={{
-                fontSize: "0.6rem", fontFamily: "'JetBrains Mono', monospace",
-                color: wakeWordEnabled ? "#00D4E8" : "#3A4560",
-                transition: "color 0.2s",
-              }}>
-                {wakeWord.status === "listening" ? "🎤" : ""}senorita
-              </span>
-              {/* Toggle pill */}
-              <div style={{
-                width: 28, height: 15, borderRadius: 8,
-                background: wakeWordEnabled ? "rgba(0,212,232,0.25)" : "#111824",
-                border: `1px solid ${wakeWordEnabled ? "rgba(0,212,232,0.5)" : "#1A2033"}`,
-                position: "relative", transition: "all 0.2s",
-                flexShrink: 0,
-              }}>
-                <div style={{
-                  position: "absolute",
-                  top: 2, left: wakeWordEnabled ? 14 : 2,
-                  width: 9, height: 9, borderRadius: "50%",
-                  background: wakeWordEnabled ? "#00D4E8" : "#3A4560",
-                  boxShadow: wakeWordEnabled ? "0 0 4px #00D4E8" : "none",
-                  transition: "all 0.2s",
-                  animation: wakeWord.status === "listening" ? "vpMicPulse 1.8s ease-in-out infinite" : "none",
-                }} />
-              </div>
-            </div>
-
             {/* Summarize button */}
             {messages.filter(m => m.role !== "error").length > 0 && (
               <button
@@ -792,7 +894,7 @@ export function VoicePanel({
                   background: isSummarizing ? "rgba(139,92,246,0.15)" : "rgba(139,92,246,0.08)",
                   border: `1px solid ${isSummarizing ? "rgba(139,92,246,0.5)" : "rgba(139,92,246,0.25)"}`,
                   color: isSummarizing ? "#A78BFA" : "#8B5CF6",
-                  fontSize: "0.58rem", padding: "2px 7px",
+                  fontSize: "0.66rem", padding: "2px 7px",
                   borderRadius: 3, cursor: isSummarizing ? "default" : "pointer",
                   fontFamily: "'JetBrains Mono', monospace", transition: "all 0.2s",
                   opacity: isProcessing ? 0.4 : 1,
@@ -816,19 +918,27 @@ export function VoicePanel({
               </button>
             )}
 
-            {/* Clear */}
+            {/* Clear - trash icon */}
             {messages.length > 0 && (
               <button
                 onClick={() => { setMessages([]); tts.stop(); }}
+                title="Clear conversation"
                 style={{
                   background: "none", border: "1px solid #1A2033",
-                  color: "#2A3555", fontSize: "0.58rem", padding: "2px 7px",
+                  color: "#2A3555", padding: "3px 5px",
                   borderRadius: 3, cursor: "pointer",
-                  fontFamily: "'JetBrains Mono', monospace", transition: "all 0.15s",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.15s",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.color = "#FF4D6D"; e.currentTarget.style.borderColor = "rgba(255,77,109,0.3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.color = "#2A3555"; e.currentTarget.style.borderColor = "#1A2033"; }}
-              >clear</button>
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                  <path d="M2 3h8M4 3V2a1 1 0 011-1h2a1 1 0 011 1v1M9 3v7a1 1 0 01-1 1H4a1 1 0 01-1-1V3" />
+                  <line x1="5" y1="5.5" x2="5" y2="8.5" />
+                  <line x1="7" y1="5.5" x2="7" y2="8.5" />
+                </svg>
+              </button>
             )}
           </div>
         </div>
@@ -854,13 +964,13 @@ export function VoicePanel({
                   <line x1="7.5" y1="19" x2="12.5" y2="19" />
                 </svg>
               </div>
-              <p style={{ fontSize: "0.75rem", color: "#3A4560", margin: 0 }}>Ask anything about your code</p>
-              <div style={{ fontSize: "0.68rem", color: "#2A3555", lineHeight: 1.6 }}>
+              <p style={{ fontSize: "0.82rem", color: "#3A4560", margin: 0 }}>Ask anything about your code</p>
+              <div style={{ fontSize: "0.75rem", color: "#2A3555", lineHeight: 1.6 }}>
                 <span style={{ color: "#4DD9E8" }}>&quot;generate a fetch helper&quot;</span><br />
                 <span style={{ color: "#4DD9E8" }}>&quot;refactor this to async/await&quot;</span><br />
                 <span style={{ color: "#4DD9E8" }}>&quot;open page.tsx and explain it&quot;</span>
               </div>
-              <div style={{ marginTop: 8, fontSize: "0.58rem", fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ marginTop: 8, fontSize: "0.66rem", fontFamily: "'JetBrains Mono', monospace" }}>
                 <span style={{ color: wsConnected ? "#00E5A0" : "#FF4D6D" }}>
                   {wsConnected ? "● Connected to backend" : "● Backend offline — using mock"}
                 </span>
@@ -905,7 +1015,7 @@ export function VoicePanel({
                 border: "1px solid rgba(0,212,232,0.15)",
                 borderRadius: "12px 12px 2px 12px", padding: "6px 10px",
               }}>
-                <p style={{ fontSize: "0.76rem", color: "#8A9BB8", margin: 0, fontStyle: "italic", fontFamily: "'DM Sans', sans-serif" }}>
+                <p style={{ fontSize: "0.82rem", color: "#8A9BB8", margin: 0, fontStyle: "italic", fontFamily: "'DM Sans', sans-serif" }}>
                   {liveInterim}
                   <span style={{ animation: "vpBlink 0.9s ease-in-out infinite", color: "#00D4E8", marginLeft: 2 }}>│</span>
                 </p>
@@ -920,131 +1030,259 @@ export function VoicePanel({
         </div>
 
         {/* ── Input bar ── */}
-        <div style={{ flexShrink: 0, borderTop: "1px solid #111824", padding: "8px 10px", background: "#08090F" }}>
-          {/* Mode dropdown */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-            <select
-              value={mode}
-              onChange={e => handleModeChange(e.target.value as AIMode)}
-              style={{
-                background: "#0E111A",
-                border: `1px solid ${
-                  mode === "Debug" ? "rgba(251,191,36,0.4)"
-                  : mode === "Create" ? "rgba(74,222,128,0.4)"
-                  : mode === "Deep Thinking" ? "rgba(139,92,246,0.4)"
-                  : "rgba(0,212,232,0.3)"
-                }`,
-                borderRadius: 6,
-                color: mode === "Debug" ? "#fbbf24"
-                  : mode === "Create" ? "#4ade80"
-                  : mode === "Deep Thinking" ? "#a78bfa"
-                  : "#00D4E8",
-                fontSize: "0.68rem",
+        <div style={{ flexShrink: 0, borderTop: "1px solid #111824", padding: "8px 10px", background: "#08090F", position: "relative" }}>
+          
+          {/* Thinking/Activity box - shows when processing */}
+          {(isProcessing || activity.status !== "idle") && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "6px 10px", marginBottom: 6,
+              background: "rgba(139,92,246,0.06)",
+              border: "1px solid rgba(139,92,246,0.15)",
+              borderRadius: 8,
+              animation: "vpSlideIn 0.15s ease forwards",
+            }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" 
+                style={{ animation: "vpSpin 1.5s linear infinite", flexShrink: 0 }}>
+                <circle cx="7" cy="7" r="5.5" stroke="rgba(139,92,246,0.6)" strokeWidth="1.5" strokeDasharray="20 12" />
+              </svg>
+              <span style={{ 
+                fontSize: "0.75rem", color: "#A78BFA", 
                 fontFamily: "'JetBrains Mono', monospace",
-                padding: "4px 8px",
-                cursor: "pointer",
-                outline: "none",
-                flex: 1,
-              }}
-            >
-              <option value="Ask">✦ Ask</option>
-              <option value="Debug">⚡ Debug</option>
-              <option value="Create">✚ Create</option>
-              <option value="Deep Thinking">◈ Deep Thinking</option>
-            </select>
-          </div>
+              }}>
+                {activity.status === "reading" ? `Reading ${activity.files.join(", ")}...` :
+                 activity.status === "searching" ? "Searching codebase..." :
+                 activity.status === "generating" ? "Generating response..." :
+                 activity.status === "editing" ? `Editing ${activity.files.join(", ")}...` :
+                 "Thinking..."}
+              </span>
+              {activity.files.length > 0 && (
+                <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                  {activity.files.slice(0, 2).map((f, i) => (
+                    <span key={i} style={{
+                      fontSize: "0.68rem", color: "#8B5CF6",
+                      background: "rgba(139,92,246,0.15)",
+                      padding: "1px 6px", borderRadius: 4,
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}>
+                      {f.split("/").pop()}
+                    </span>
+                  ))}
+                  {activity.files.length > 2 && (
+                    <span style={{ fontSize: "0.68rem", color: "#6D28D9" }}>+{activity.files.length - 2}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Context files pills - shows current file and edited files */}
+          {contextFiles.length > 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "4px 8px", marginBottom: 6,
+              overflowX: "auto",
+            }}>
+              {contextFiles.map((file, i) => (
+                <div
+                  key={i}
+                  onClick={() => onOpenFile?.(file.name)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    background: file.isEdited ? "rgba(74,222,128,0.1)" : "rgba(0,212,232,0.08)",
+                    border: `1px solid ${file.isEdited ? "rgba(74,222,128,0.25)" : "rgba(0,212,232,0.2)"}`,
+                    borderRadius: 5,
+                    padding: "2px 8px",
+                    flexShrink: 0,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = file.isEdited ? "rgba(74,222,128,0.18)" : "rgba(0,212,232,0.15)";
+                    e.currentTarget.style.borderColor = file.isEdited ? "rgba(74,222,128,0.4)" : "rgba(0,212,232,0.35)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = file.isEdited ? "rgba(74,222,128,0.1)" : "rgba(0,212,232,0.08)";
+                    e.currentTarget.style.borderColor = file.isEdited ? "rgba(74,222,128,0.25)" : "rgba(0,212,232,0.2)";
+                  }}
+                  title={`Click to open ${file.name}`}
+                >
+                  <span style={{ 
+                    fontSize: "0.72rem", 
+                    color: file.isEdited ? "#4ade80" : "#00D4E8",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}>
+                    @{file.name.split("/").pop()?.split("\\").pop()}
+                  </span>
+                  <span style={{
+                    fontSize: "0.62rem", color: "#3A4560",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}>
+                    {file.tokens > 1000 ? `${(file.tokens / 1000).toFixed(1)}k` : file.tokens}
+                  </span>
+                  {file.isEdited && (
+                    <span style={{ fontSize: "0.6rem", color: "#4ade80" }}>●</span>
+                  )}
+                  <span
+                    onClick={(e) => { e.stopPropagation(); setContextFiles(prev => prev.filter((_, idx) => idx !== i)); }}
+                    style={{ 
+                      fontSize: "0.65rem", color: "#2A3555", cursor: "pointer",
+                      marginLeft: 2, transition: "color 0.15s",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#FF4D6D")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#2A3555")}
+                  >✕</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Main input container */}
           <div style={{
-            display: "flex", alignItems: "flex-end", gap: 8,
+            display: "flex", flexDirection: "column",
             background: "#0E111A",
             border: `1px solid ${isActive ? "rgba(0,212,232,0.4)" : "#1A2033"}`,
-            borderRadius: 10, padding: "6px 8px", transition: "border-color 0.2s",
+            borderRadius: 10, transition: "border-color 0.2s",
           }}>
-            <textarea
-              ref={textareaRef}
-              value={textInput}
-              onChange={e => { setTextInput(e.target.value); autoGrow(); }}
-              onKeyDown={handleKeyDown}
-              placeholder={voice.isSupported ? "Message or press mic to speak…" : "Type a command…"}
-              disabled={isProcessing}
-              rows={1}
-              style={{
-                flex: 1, background: "transparent", border: "none", outline: "none",
-                color: "#C8D5E8", fontSize: "0.8rem", lineHeight: 1.5,
-                fontFamily: "'DM Sans', sans-serif", resize: "none", overflowY: "hidden",
-                minHeight: 22, maxHeight: 120, padding: 0, margin: 0,
-                opacity: isProcessing ? 0.5 : 1,
-              }}
-            />
-            {isActive && (
-              <div style={{ paddingBottom: 3, flexShrink: 0 }}>
-                <MiniWaveform active={true} />
+            {/* Textarea row */}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, padding: "10px 10px 6px 10px" }}>
+              <textarea
+                ref={textareaRef}
+                value={textInput}
+                onChange={e => { setTextInput(e.target.value); autoGrow(); }}
+                onKeyDown={handleKeyDown}
+                placeholder={voice.isSupported ? "Ask anything (Ctrl+L)" : "Type a command…"}
+                disabled={isProcessing}
+                rows={1}
+                className="vp-textarea-scroll"
+                style={{
+                  flex: 1, background: "transparent", border: "none", outline: "none",
+                  color: "#C8D5E8", fontSize: "0.88rem", lineHeight: 1.5,
+                  fontFamily: "'DM Sans', sans-serif", resize: "none", overflowY: "auto",
+                  minHeight: 22, maxHeight: 120, padding: 0, margin: 0,
+                  opacity: isProcessing ? 0.5 : 1,
+                }}
+              />
+              {isActive && (
+                <div style={{ paddingBottom: 3, flexShrink: 0 }}>
+                  <MiniWaveform active={true} />
+                </div>
+              )}
+            </div>
+            
+            {/* Bottom bar with mode selector and buttons */}
+            <div style={{ 
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "6px 8px", borderTop: "1px solid #1A2033",
+            }}>
+              {/* Left side - Mode dropup + toggles */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+                <ModeDropup mode={mode} onModeChange={handleModeChange} />
+                
+                {/* Voice toggle (TTS) */}
+                {tts.isSupported && (
+                  <div
+                    onClick={() => { tts.setAutoSpeak(!tts.autoSpeak); if (tts.isSpeaking) tts.stop(); }}
+                    title={tts.autoSpeak ? "Voice ON" : "Voice OFF"}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      cursor: "pointer", userSelect: "none",
+                      padding: "3px 6px", borderRadius: 4,
+                      background: tts.autoSpeak ? "rgba(0,229,160,0.1)" : "transparent",
+                      border: `1px solid ${tts.autoSpeak ? "rgba(0,229,160,0.3)" : "transparent"}`,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" 
+                      stroke={tts.autoSpeak ? "#00E5A0" : "#3A4560"} strokeWidth="1.3" strokeLinecap="round">
+                      <path d="M1 4.5v3h2l3 2.5v-8L3 4.5H1z" />
+                      {tts.autoSpeak && <path d="M8 4c.5.5.8 1.2.8 2s-.3 1.5-.8 2M9.5 2.5c1 1 1.5 2.2 1.5 3.5s-.5 2.5-1.5 3.5" />}
+                    </svg>
+                  </div>
+                )}
+                
+                {/* Wake word toggle */}
+                <div
+                  onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
+                  title={wakeWordEnabled ? 'Wake word ON — say "Senorita"' : "Wake word OFF"}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    cursor: "pointer", userSelect: "none",
+                    padding: "3px 6px", borderRadius: 4,
+                    background: wakeWordEnabled ? "rgba(0,212,232,0.1)" : "transparent",
+                    border: `1px solid ${wakeWordEnabled ? "rgba(0,212,232,0.3)" : "transparent"}`,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <span style={{
+                    fontSize: "0.7rem", fontFamily: "'JetBrains Mono', monospace",
+                    color: wakeWordEnabled ? "#00D4E8" : "#3A4560",
+                  }}>
+                    {wakeWord.status === "listening" ? "🎤" : "💤"}
+                  </span>
+                </div>
               </div>
-            )}
-            {/* Send */}
-            <button
-              onClick={handleTextSubmit}
-              disabled={!textInput.trim() || isProcessing}
-              title="Send (Enter)"
-              style={{
-                width: 30, height: 30, borderRadius: 7, flexShrink: 0,
-                background: textInput.trim() && !isProcessing ? "#00D4E8" : "rgba(0,212,232,0.06)",
-                border: `1px solid ${textInput.trim() && !isProcessing ? "#00D4E8" : "#1A2033"}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: textInput.trim() && !isProcessing ? "pointer" : "not-allowed",
-                transition: "all 0.18s",
-              }}
-            >
-              {isProcessing ? (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: "vpSpin 0.8s linear infinite" }}>
-                  <circle cx="7" cy="7" r="5.5" stroke="#00D4E8" strokeWidth="1.8" strokeDasharray="20 16" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                  stroke={textInput.trim() ? "#07090E" : "#2A3555"} strokeWidth="1.8"
-                  strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="7" y1="12" x2="7" y2="2" />
-                  <polyline points="3,6 7,2 11,6" />
-                </svg>
-              )}
-            </button>
-            {/* Mic */}
-            <button
-              onClick={voice.toggle}
-              disabled={!voice.isSupported || isProcessing}
-              title={!voice.isSupported ? "Speech not supported" : isActive ? "Stop listening" : "Start voice input"}
-              style={{
-                width: 30, height: 30, borderRadius: 7, flexShrink: 0,
-                background: isActive ? "rgba(0,212,232,0.18)" : "rgba(0,212,232,0.06)",
-                border: `1.5px solid ${isActive ? "rgba(0,212,232,0.7)" : "#1A2033"}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: !voice.isSupported || isProcessing ? "not-allowed" : "pointer",
-                transition: "all 0.18s",
-                animation: isActive ? "vpMicPulse 1.8s ease-in-out infinite" : "none",
-                opacity: !voice.isSupported ? 0.35 : 1,
-              }}
-            >
-              {isActive ? (
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <rect x="2" y="2" width="8" height="8" rx="1.5" fill="#00D4E8" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-                  stroke="#00D4E8" strokeWidth="1.5" strokeLinecap="round">
-                  <rect x="4.5" y="1" width="5" height="7.5" rx="2.5" />
-                  <path d="M2 7a5 5 0 0 0 10 0" />
-                  <line x1="7" y1="12" x2="7" y2="13.5" />
-                  <line x1="5" y1="13.5" x2="9" y2="13.5" />
-                </svg>
-              )}
-            </button>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, padding: "0 2px" }}>
-            <span style={{ fontSize: "0.58rem", color: "#1A2033", fontFamily: "'JetBrains Mono', monospace" }}>
-              Enter to send · Shift+Enter new line
-            </span>
-            <span style={{ fontSize: "0.58rem", color: "#1A2033", fontFamily: "'JetBrains Mono', monospace" }}>
-              {messages.filter(m => m.role === "user").length} msgs
-            </span>
+              
+              {/* Right side - Action buttons */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* Mic */}
+                <button
+                  onClick={voice.toggle}
+                  disabled={!voice.isSupported || isProcessing}
+                  title={!voice.isSupported ? "Speech not supported" : isActive ? "Stop listening" : "Start voice input"}
+                  style={{
+                    width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                    background: isActive ? "rgba(0,212,232,0.18)" : "transparent",
+                    border: "none",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: !voice.isSupported || isProcessing ? "not-allowed" : "pointer",
+                    transition: "all 0.18s",
+                    animation: isActive ? "vpMicPulse 1.8s ease-in-out infinite" : "none",
+                    opacity: !voice.isSupported ? 0.35 : 1,
+                  }}
+                >
+                  {isActive ? (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <rect x="2" y="2" width="8" height="8" rx="1.5" fill="#00D4E8" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                      stroke="#5A6888" strokeWidth="1.5" strokeLinecap="round">
+                      <rect x="5" y="1.5" width="6" height="8" rx="3" />
+                      <path d="M2.5 8a5.5 5.5 0 0 0 11 0" />
+                      <line x1="8" y1="13" x2="8" y2="14.5" />
+                    </svg>
+                  )}
+                </button>
+                {/* Send */}
+                <button
+                  onClick={handleTextSubmit}
+                  disabled={!textInput.trim() || isProcessing}
+                  title="Send (Enter)"
+                  style={{
+                    width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                    background: textInput.trim() && !isProcessing ? "#00D4E8" : "transparent",
+                    border: "none",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: textInput.trim() && !isProcessing ? "pointer" : "not-allowed",
+                    transition: "all 0.18s",
+                  }}
+                >
+                  {isProcessing ? (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: "vpSpin 0.8s linear infinite" }}>
+                      <circle cx="7" cy="7" r="5.5" stroke="#00D4E8" strokeWidth="1.8" strokeDasharray="20 16" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+                      stroke={textInput.trim() ? "#07090E" : "#3A4560"} strokeWidth="1.8"
+                      strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="7" y1="12" x2="7" y2="2" />
+                      <polyline points="3,6 7,2 11,6" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

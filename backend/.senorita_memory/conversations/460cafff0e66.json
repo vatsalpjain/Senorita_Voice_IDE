@@ -1,0 +1,25 @@
+{
+  "id": "460cafff0e66",
+  "title": "New Conversation",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can You tell me all the agennts that are there in this project search and say, what does each do",
+      "timestamp": "2026-02-28T08:31:50.160095",
+      "metadata": {
+        "intent": "chat",
+        "file_path": "routes.py"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "In the project, there are several agents or services that perform specific tasks. The main agents are:\n\n1. **LLM (Large Language Model) Service**: This agent is responsible for handling LLM actions such as \"GENERATE_CODE\", \"DEBUG_MODE\", \"REVIEW_MODE\", and \"EXPLAIN_CODE\". It is used in the `process_command` function in `routes.py`.\n2. **N8N (n8n.io) Service**: This agent is used for automating workflows and is triggered by actions such as \"N8N_EMAIL\", \"N8N_GITHUB\", and \"N8N_SLACK\". It is also used in the `process_command` function in `routes.py`.\n3. **Deepgram STT (Speech-to-Text) Service**: This agent is used for transcribing audio files and is used in the `transcribe_upload` function in `routes.py`.\n4. **Deepgram TTS (Text-to-Speech) Service**: This agent is used for converting text to speech and is used in the `generate_tts` function in `routes.py`.\n5. **Code Actions Service**: This agent is used for handling code actions and is used in the `process_command` function in `routes.py`.\n6. **File Registry Service**: This agent is used for managing files and is used in the `search_files` function in `routes.py`.\n7. **Memory Service**: This agent is used for managing memories and is used in the `search_memories` function in `routes.py`.\n8. **Symbol Indexer Service**: This agent is used for indexing symbols and is used in the `search_symbols` function in `routes.py`.\n9. **Embedding Service**: This agent is used for semantic search and is used in the `search_symbols` function in `routes.py`.\n\nEach of these agents performs a specific task and is used in various parts of the project to provide the desired functionality.",
+      "timestamp": "2026-02-28T08:31:50.162604",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2026-02-28T08:31:50.156389",
+  "updated_at": "2026-02-28T08:31:50.162633",
+  "project_root": "",
+  "metadata": {}
+}

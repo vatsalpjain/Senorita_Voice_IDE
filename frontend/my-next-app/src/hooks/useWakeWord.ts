@@ -161,7 +161,9 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
 
       ws.onerror = () => {
         if (!mountedRef.current) return;
-        setState((prev) => ({ ...prev, status: "error", error: "WebSocket error" }));
+        // Silently handle - wake word service may not be available
+        console.log("[WakeWord] WebSocket connection failed (wake word service may not be available)");
+        setState((prev) => ({ ...prev, status: "unavailable", error: null, isAvailable: false }));
       };
 
       ws.onclose = () => {
@@ -388,9 +390,10 @@ export function useWakeWord(options: UseWakeWordOptions = {}): UseWakeWordReturn
           } catch { /* ignore */ }
         };
 
-        ws.onerror = (e) => {
-          console.error("[WakeWord] WebSocket error:", e);
-          setState((prev) => ({ ...prev, status: "error", error: "WebSocket error" }));
+        ws.onerror = () => {
+          // Silently handle WebSocket errors - backend may not have wake word endpoint
+          console.log("[WakeWord] WebSocket connection failed (wake word service may not be available)");
+          setState((prev) => ({ ...prev, status: "unavailable", error: null, isAvailable: false }));
         };
 
         ws.onclose = () => {
